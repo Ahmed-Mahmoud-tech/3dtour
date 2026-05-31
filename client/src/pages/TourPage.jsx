@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { useTour } from '../hooks/useTour.js';
-import { usePreloader } from '../hooks/usePreloader.js';
-import SphereViewer from '../components/Sphere/SphereViewer.jsx';
-import NavigationSidebar from '../components/Sidebar/NavigationSidebar.jsx';
-import InfoPopup from '../components/Popup/InfoPopup.jsx';
+import { useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
+import { useTour } from "../hooks/useTour.js";
+import { usePreloader } from "../hooks/usePreloader.js";
+import SphereViewer from "../components/Sphere/SphereViewer.jsx";
+import NavigationSidebar from "../components/Sidebar/NavigationSidebar.jsx";
+import InfoPopup from "../components/Popup/InfoPopup.jsx";
 
 const FADE_MS = 250; // ms for fade-to-black transitions
 
@@ -41,11 +41,18 @@ export default function TourPage() {
   } = useTour(projectId);
 
   // ─── Preload next assets when hovering / navigating ──────────────────────
-  const handleNavigate = async (targetNodeId, videoUrl, playMode = 'forward', transitionId, videoYawOffset = 0) => {
+  const handleNavigate = async (
+    targetNodeId,
+    videoUrl,
+    playMode = "forward",
+    transitionId,
+    videoYawOffset = 0,
+  ) => {
     if (!project) return;
     const targetNode = project.nodes?.[targetNodeId];
     // Resolve URL: embedded field (new) OR transitions Map (legacy)
-    const resolvedUrl = videoUrl || project.transitions?.[transitionId]?.videoUrl || null;
+    const resolvedUrl =
+      videoUrl || project.transitions?.[transitionId]?.videoUrl || null;
     const transitionData = resolvedUrl ? { videoUrl: resolvedUrl } : null;
 
     // Background preload — fires and resolves before the transition starts
@@ -56,7 +63,9 @@ export default function TourPage() {
       // Negate because panorama angles are right-positive but euler.y is left-positive.
       if (videoYawOffset) setVideoYawOverride(-videoYawOffset);
       // Destination node entry angle: configured offset, or preserve user's current rotation.
-      setEntryYaw(videoYawOffset ? -videoYawOffset : lastYawRef.current * (180 / Math.PI));
+      setEntryYaw(
+        videoYawOffset ? -videoYawOffset : lastYawRef.current * (180 / Math.PI),
+      );
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
       // No video — cancel any ongoing transition, then fade to black, switch, fade back
@@ -76,7 +85,7 @@ export default function TourPage() {
     if (targetNodeId === activeNodeId || !project) return;
     cancelTransition(); // stop any playing transition video
     setVideoYawOverride(null); // clear stale video-yaw so new node starts at its own initialYawOffset
-    setEntryYaw(null);         // reset to let the target node use its own initialYawOffset
+    setEntryYaw(null); // reset to let the target node use its own initialYawOffset
     const targetNode = project.nodes?.[targetNodeId];
     await preloadNextAssets(targetNode, null);
     setActiveNodeId(targetNodeId);
@@ -126,8 +135,12 @@ export default function TourPage() {
         onNavigate={handleNavigate}
         onSignClick={(content) => setActivePopup(content)}
         initialYaw={entryYaw}
-        onYawChange={(yawRad) => { lastYawRef.current = yawRad; }}
-        transitionVideoUrl={isTransitioning && transition ? transition.videoUrl : null}
+        onYawChange={(yawRad) => {
+          lastYawRef.current = yawRad;
+        }}
+        transitionVideoUrl={
+          isTransitioning && transition ? transition.videoUrl : null
+        }
         onTransitionComplete={handleTransitionComplete}
         videoYawOverride={videoYawOverride}
       />
@@ -152,10 +165,12 @@ export default function TourPage() {
       />
 
       {/* ── Node title badge ── */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10
+      <div
+        className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10
                       px-4 py-2 rounded-full bg-black/50 backdrop-blur-sm
                       text-white/80 text-sm font-medium border border-white/10
-                      pointer-events-none">
+                      pointer-events-none"
+      >
         {activeNode.displayName}
       </div>
 

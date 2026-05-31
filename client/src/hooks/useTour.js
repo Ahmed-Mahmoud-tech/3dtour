@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import axios from 'axios';
+import { useState, useEffect, useCallback, useRef } from "react";
+import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 /**
  * useTour — Central state machine for the 360 tour viewer.
@@ -14,18 +14,18 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
  *  - UI visibility (hotspots/signs hidden during transitions)
  */
 export function useTour(projectId) {
-  const [project, setProject]         = useState(null);
+  const [project, setProject] = useState(null);
   const [activeNodeId, setActiveNodeId] = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Transition state
-  const [transition, setTransition]   = useState(null); // { videoUrl, playMode, targetNodeId }
+  const [transition, setTransition] = useState(null); // { videoUrl, playMode, targetNodeId }
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [hotspotVisible, setHotspotVisible]   = useState(true);
+  const [hotspotVisible, setHotspotVisible] = useState(true);
 
   // Audio
-  const [audioMuted, setAudioMuted]   = useState(false);
+  const [audioMuted, setAudioMuted] = useState(false);
   const audioRef = useRef(null);
 
   // ─── Fetch project ──────────────────────────────────────────────────────────
@@ -35,11 +35,15 @@ export function useTour(projectId) {
     const fetchProject = async () => {
       try {
         setLoading(true);
-        const { data } = await axios.get(`${API_BASE}/projects/${projectId}/public`);
+        const { data } = await axios.get(
+          `${API_BASE}/projects/${projectId}/public`,
+        );
         setProject(data);
-        setActiveNodeId(data.settings?.initialNodeId || Object.keys(data.nodes)[0]);
+        setActiveNodeId(
+          data.settings?.initialNodeId || Object.keys(data.nodes)[0],
+        );
       } catch (err) {
-        setError(err.response?.data?.message || 'Failed to load tour');
+        setError(err.response?.data?.message || "Failed to load tour");
       } finally {
         setLoading(false);
       }
@@ -51,7 +55,8 @@ export function useTour(projectId) {
   // ─── Background audio management ───────────────────────────────────────────
   useEffect(() => {
     const audioSrc = project?.settings?.globalBackgroundAudio?.src;
-    const defaultVolume = project?.settings?.globalBackgroundAudio?.defaultVolume ?? 0.4;
+    const defaultVolume =
+      project?.settings?.globalBackgroundAudio?.defaultVolume ?? 0.4;
 
     if (!audioSrc) return;
 
@@ -63,14 +68,14 @@ export function useTour(projectId) {
       // Auto-play policy: play on first user interaction
       const unlock = () => {
         audio.play();
-        window.removeEventListener('click', unlock);
+        window.removeEventListener("click", unlock);
       };
-      window.addEventListener('click', unlock, { once: true });
+      window.addEventListener("click", unlock, { once: true });
     });
 
     return () => {
       audio.pause();
-      audio.src = '';
+      audio.src = "";
     };
   }, [project]);
 
@@ -89,7 +94,7 @@ export function useTour(projectId) {
    * @param {'forward'|'backward'} [playMode='forward']
    */
   const navigateTo = useCallback(
-    (targetNodeId, videoUrl, playMode = 'forward') => {
+    (targetNodeId, videoUrl, playMode = "forward") => {
       if (!project) return;
       if (targetNodeId === activeNodeId) return;
 
@@ -105,7 +110,7 @@ export function useTour(projectId) {
         setActiveNodeId(targetNodeId);
       }
     },
-    [project, activeNodeId]
+    [project, activeNodeId],
   );
 
   /** Cancel an in-progress video transition without changing the active node */

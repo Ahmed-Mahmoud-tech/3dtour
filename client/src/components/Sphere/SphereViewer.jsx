@@ -1,9 +1,9 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { useTexture, Html } from '@react-three/drei';
-import * as THREE from 'three';
-import NavigationHotspot from './NavigationHotspot.jsx';
-import InfoSign from './InfoSign.jsx';
+import { useRef, useEffect, useCallback, useState } from "react";
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { useTexture, Html } from "@react-three/drei";
+import * as THREE from "three";
+import NavigationHotspot from "./NavigationHotspot.jsx";
+import InfoSign from "./InfoSign.jsx";
 
 const SPHERE_RADIUS = 50;
 
@@ -33,14 +33,20 @@ function PanoramaSphere({ panoramaUrl }) {
 }
 
 // ─── Drag-to-pan Camera Controls ─────────────────────────────────────────────
-function PanoramaControls({ initialYawOffset = 0, onYawChange, videoYawOverride }) {
+function PanoramaControls({
+  initialYawOffset = 0,
+  onYawChange,
+  videoYawOverride,
+}) {
   const { camera, gl } = useThree();
-  const isDragging   = useRef(false);
-  const prevMouse    = useRef({ x: 0, y: 0 });
-  const euler        = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
+  const isDragging = useRef(false);
+  const prevMouse = useRef({ x: 0, y: 0 });
+  const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
   // Use a ref so callbacks don't force useCallback recreation on every render
   const onYawChangeRef = useRef(onYawChange);
-  useEffect(() => { onYawChangeRef.current = onYawChange; });
+  useEffect(() => {
+    onYawChangeRef.current = onYawChange;
+  });
 
   // Apply initial yaw on mount only; key={node.id} on parent remounts this on node change
   useEffect(() => {
@@ -87,13 +93,14 @@ function PanoramaControls({ initialYawOffset = 0, onYawChange, videoYawOverride 
       // Report yaw on every move so callers always have the latest value
       onYawChangeRef.current?.(euler.current.y);
     },
-    [camera]
+    [camera],
   );
 
   const onPointerUp = useCallback((e) => {
     isDragging.current = false;
     onYawChangeRef.current?.(euler.current.y);
-    if (e?.target?.releasePointerCapture) e.target.releasePointerCapture(e.pointerId);
+    if (e?.target?.releasePointerCapture)
+      e.target.releasePointerCapture(e.pointerId);
   }, []);
 
   // Touch support
@@ -108,7 +115,7 @@ function PanoramaControls({ initialYawOffset = 0, onYawChange, videoYawOverride 
       const t = e.touches[0];
       onPointerMove({ clientX: t.clientX, clientY: t.clientY });
     },
-    [onPointerMove]
+    [onPointerMove],
   );
 
   const onTouchEnd = useCallback(() => {
@@ -118,22 +125,30 @@ function PanoramaControls({ initialYawOffset = 0, onYawChange, videoYawOverride 
 
   useEffect(() => {
     const canvas = gl.domElement;
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
-    canvas.addEventListener('pointerup', onPointerUp);
-    canvas.addEventListener('touchstart', onTouchStart, { passive: true });
-    canvas.addEventListener('touchmove', onTouchMove, { passive: true });
-    canvas.addEventListener('touchend', onTouchEnd);
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("touchstart", onTouchStart, { passive: true });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: true });
+    canvas.addEventListener("touchend", onTouchEnd);
 
     return () => {
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
-      canvas.removeEventListener('pointerup', onPointerUp);
-      canvas.removeEventListener('touchstart', onTouchStart);
-      canvas.removeEventListener('touchmove', onTouchMove);
-      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
     };
-  }, [gl.domElement, onPointerDown, onPointerMove, onPointerUp, onTouchStart, onTouchMove, onTouchEnd]);
+  }, [
+    gl.domElement,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+  ]);
 
   // Nothing to render — this is a pure-logic component
   return null;
@@ -142,13 +157,15 @@ function PanoramaControls({ initialYawOffset = 0, onYawChange, videoYawOverride 
 // ─── Video Sphere (transition video mapped onto the sphere) ──────────────────
 function VideoSphere({ videoUrl, onEnded }) {
   const [texture, setTexture] = useState(null);
-  const opacityRef     = useRef(0);
-  const fadingOutRef   = useRef(false);
+  const opacityRef = useRef(0);
+  const fadingOutRef = useRef(false);
   const onEndedCalledRef = useRef(false);
-  const matRef         = useRef();
+  const matRef = useRef();
   // Keep latest onEnded in a ref to avoid re-creating the video on callback change
   const onEndedRef = useRef(onEnded);
-  useEffect(() => { onEndedRef.current = onEnded; });
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  });
 
   // Update video texture + fade-in / fade-out opacity every frame
   useFrame(() => {
@@ -178,17 +195,17 @@ function VideoSphere({ videoUrl, onEnded }) {
     fadingOutRef.current = false;
     onEndedCalledRef.current = false;
 
-    const video = document.createElement('video');
+    const video = document.createElement("video");
     // Set attributes BEFORE src to avoid CORS / load-order issues
     video.muted = true;
     video.playsInline = true;
-    video.preload = 'auto';
+    video.preload = "auto";
     // No crossOrigin — video is same-origin via Vite proxy; adding it causes CORS failures
 
     const tex = new THREE.VideoTexture(video);
     tex.wrapS = THREE.RepeatWrapping;
     tex.repeat.x = -1;
-    tex.offset.x = 1;           // fixes seam/cutting caused by negative repeat
+    tex.offset.x = 1; // fixes seam/cutting caused by negative repeat
     tex.colorSpace = THREE.SRGBColorSpace;
 
     const handlePlaying = () => {
@@ -201,31 +218,31 @@ function VideoSphere({ videoUrl, onEnded }) {
     };
     const handleError = () => {
       if (!mounted) return;
-      console.error('Transition video failed:', videoUrl);
+      console.error("Transition video failed:", videoUrl);
       onEndedRef.current?.();
     };
 
-    video.addEventListener('playing', handlePlaying, { once: true });
-    video.addEventListener('ended', handleEnded);
-    video.addEventListener('error', handleError);
+    video.addEventListener("playing", handlePlaying, { once: true });
+    video.addEventListener("ended", handleEnded);
+    video.addEventListener("error", handleError);
 
     video.src = videoUrl;
     video.play().catch((err) => {
       if (!mounted) return;
-      if (err.name !== 'AbortError') {
-        console.error('Transition video play rejected:', err);
+      if (err.name !== "AbortError") {
+        console.error("Transition video play rejected:", err);
         onEndedRef.current?.();
       }
     });
 
     return () => {
       mounted = false;
-      video.removeEventListener('playing', handlePlaying);
-      video.removeEventListener('ended', handleEnded);
-      video.removeEventListener('error', handleError);
+      video.removeEventListener("playing", handlePlaying);
+      video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("error", handleError);
       setTexture(null);
       video.pause();
-      video.src = '';
+      video.src = "";
       tex.dispose();
     };
   }, [videoUrl]);
@@ -236,28 +253,54 @@ function VideoSphere({ videoUrl, onEnded }) {
     <mesh>
       {/* Slightly smaller radius so video renders in front of PanoramaSphere */}
       <sphereGeometry args={[SPHERE_RADIUS - 0.1, 128, 64]} />
-      <meshBasicMaterial ref={matRef} map={texture} side={THREE.BackSide}
-                         transparent opacity={0} />
+      <meshBasicMaterial
+        ref={matRef}
+        map={texture}
+        side={THREE.BackSide}
+        transparent
+        opacity={0}
+      />
     </mesh>
   );
 }
 
 // ─── Scene Root ───────────────────────────────────────────────────────────────
-function Scene({ node, hotspotVisible, onNavigate, onSignClick, initialYaw, onYawChange,
-                 transitionVideoUrl, onTransitionComplete, videoYawOverride }) {
+function Scene({
+  node,
+  hotspotVisible,
+  onNavigate,
+  onSignClick,
+  initialYaw,
+  onYawChange,
+  transitionVideoUrl,
+  onTransitionComplete,
+  videoYawOverride,
+}) {
   return (
     <>
-      <PanoramaControls key={node.id} initialYawOffset={initialYaw} onYawChange={onYawChange} videoYawOverride={videoYawOverride} />
+      <PanoramaControls
+        key={node.id}
+        initialYawOffset={initialYaw}
+        onYawChange={onYawChange}
+        videoYawOverride={videoYawOverride}
+      />
       {/* Hide panorama while video is playing — VideoSphere fades in over black, avoiding a wrong-angle flash */}
       {!transitionVideoUrl && <PanoramaSphere panoramaUrl={node.panoramaUrl} />}
       {/* Video sphere sits in front; only appears once first frame is decoded */}
       {transitionVideoUrl && (
-        <VideoSphere videoUrl={transitionVideoUrl} onEnded={onTransitionComplete} />
+        <VideoSphere
+          videoUrl={transitionVideoUrl}
+          onEnded={onTransitionComplete}
+        />
       )}
 
       {hotspotVisible &&
         node.navigationHotspots?.map((hotspot) => (
-          <NavigationHotspot key={hotspot.id} hotspot={hotspot} onNavigate={onNavigate} />
+          <NavigationHotspot
+            key={hotspot.id}
+            hotspot={hotspot}
+            onNavigate={onNavigate}
+          />
         ))}
 
       {hotspotVisible &&
@@ -275,23 +318,38 @@ function Scene({ node, hotspotVisible, onNavigate, onSignClick, initialYaw, onYa
  * @param {boolean}  props.hotspotVisible Whether hotspots/signs are rendered
  * @param {function} props.onNavigate     (targetNodeId, transitionId, playMode) => void
  */
-export default function SphereViewer({ node, hotspotVisible, onNavigate, onSignClick, initialYaw, onYawChange,
-                                       transitionVideoUrl, onTransitionComplete, videoYawOverride }) {
+export default function SphereViewer({
+  node,
+  hotspotVisible,
+  onNavigate,
+  onSignClick,
+  initialYaw,
+  onYawChange,
+  transitionVideoUrl,
+  onTransitionComplete,
+  videoYawOverride,
+}) {
   if (!node) return null;
 
   // entryYaw (initialYaw prop) is already in internal euler.y-degrees space.
   // node.initialYawOffset is a panorama angle (right = positive) which must be
   // negated because Three.js camera rotates counter-clockwise for positive euler.y.
-  const effectiveYaw = initialYaw !== null && initialYaw !== undefined
-    ? initialYaw
-    : -(node.initialYawOffset || 0);
+  const effectiveYaw =
+    initialYaw !== null && initialYaw !== undefined
+      ? initialYaw
+      : -(node.initialYawOffset || 0);
 
   return (
     <Canvas
       camera={{ fov: 65, near: 0.1, far: 200, position: [0, 0, 0.01] }}
-      style={{ width: '100%', height: '100%', background: '#000',
-               userSelect: 'none', WebkitUserSelect: 'none',
-               WebkitUserDrag: 'none' }}
+      style={{
+        width: "100%",
+        height: "100%",
+        background: "#000",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        WebkitUserDrag: "none",
+      }}
       onDragStart={(e) => e.preventDefault()}
       gl={{ antialias: true }}
     >
