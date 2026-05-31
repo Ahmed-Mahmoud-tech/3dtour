@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  background: #0f1117;
+  color: #f1f5f9;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* Crosshair cursor when in placement mode */
+.placement-mode canvas { cursor: crosshair !important; }
+
+/* Admin input styles */
+.admin-input {
+  @apply w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2
+         text-sm text-white placeholder-gray-500
+         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+         transition-colors;
+}
+
+.admin-label {
+  @apply block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider;
+}
+
+.admin-btn-primary {
+  @apply px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm
+         font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.admin-btn-secondary {
+  @apply px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm
+         font-medium transition-colors;
+}
+
+.admin-btn-danger {
+  @apply px-4 py-2 rounded-lg bg-red-600/80 hover:bg-red-500 text-white text-sm
+         font-medium transition-colors;
+}
+
+.admin-card {
+  @apply bg-gray-900 border border-gray-800 rounded-xl p-4;
+}

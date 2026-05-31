@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Uploaded media (large binary files)
+server/uploads/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Vite cache
+.vite/
