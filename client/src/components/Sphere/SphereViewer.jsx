@@ -47,6 +47,8 @@ function PanoramaControls({ initialYawOffset = 0, onYawChange, videoYawOverride 
     euler.current.y = THREE.MathUtils.degToRad(initialYawOffset);
     euler.current.x = 0;
     camera.quaternion.setFromEuler(euler.current);
+    // Seed lastYawRef so first navigation preserves the initial yaw even without dragging
+    onYawChangeRef.current?.(euler.current.y);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -173,6 +175,8 @@ function VideoSphere({ videoUrl, onEnded }) {
   useEffect(() => {
     let mounted = true;
     opacityRef.current = 0;
+    fadingOutRef.current = false;
+    onEndedCalledRef.current = false;
 
     const video = document.createElement('video');
     // Set attributes BEFORE src to avoid CORS / load-order issues
@@ -244,8 +248,8 @@ function Scene({ node, hotspotVisible, onNavigate, onSignClick, initialYaw, onYa
   return (
     <>
       <PanoramaControls key={node.id} initialYawOffset={initialYaw} onYawChange={onYawChange} videoYawOverride={videoYawOverride} />
-      {/* Panorama always visible — acts as background during transition */}
-      <PanoramaSphere panoramaUrl={node.panoramaUrl} />
+      {/* Hide panorama while video is playing — VideoSphere fades in over black, avoiding a wrong-angle flash */}
+      {!transitionVideoUrl && <PanoramaSphere panoramaUrl={node.panoramaUrl} />}
       {/* Video sphere sits in front; only appears once first frame is decoded */}
       {transitionVideoUrl && (
         <VideoSphere videoUrl={transitionVideoUrl} onEnded={onTransitionComplete} />

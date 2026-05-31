@@ -90,23 +90,32 @@ export function useTour(projectId) {
    */
   const navigateTo = useCallback(
     (targetNodeId, videoUrl, playMode = 'forward') => {
-      if (isTransitioning || !project) return;
+      if (!project) return;
       if (targetNodeId === activeNodeId) return;
 
       if (videoUrl) {
+        // Overwrite any existing transition — VideoSphere will restart with the new URL
         setTransition({ videoUrl, playMode, targetNodeId });
         setIsTransitioning(true);
-        // Hotspots hidden immediately on transition start
-        setHotspotVisible(false);
+        setHotspotVisible(false); // hide hotspots/signs while video plays
       } else {
-        // No transition video — jump directly
+        // No transition video — jump directly (caller handles fade overlay)
+        setTransition(null);
+        setIsTransitioning(false);
         setActiveNodeId(targetNodeId);
       }
     },
-    [isTransitioning, project, activeNodeId]
+    [project, activeNodeId]
   );
 
-  /** Called by TransitionPlayer when video finishes */
+  /** Cancel an in-progress video transition without changing the active node */
+  const cancelTransition = useCallback(() => {
+    setTransition(null);
+    setIsTransitioning(false);
+    setHotspotVisible(true);
+  }, []);
+
+  /** Called by VideoSphere when video finishes */
   const onTransitionComplete = useCallback(() => {
     if (!transition) return;
     setActiveNodeId(transition.targetNodeId);
@@ -129,6 +138,7 @@ export function useTour(projectId) {
     audioMuted,
     toggleAudio,
     navigateTo,
+    cancelTransition,
     onTransitionComplete,
     setActiveNodeId,
   };

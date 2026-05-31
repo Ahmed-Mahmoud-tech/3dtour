@@ -35,6 +35,7 @@ export default function TourPage() {
     audioMuted,
     toggleAudio,
     navigateTo,
+    cancelTransition,
     onTransitionComplete,
     setActiveNodeId,
   } = useTour(projectId);
@@ -51,15 +52,17 @@ export default function TourPage() {
     await preloadNextAssets(targetNode, transitionData);
 
     if (resolvedUrl) {
-      // Snap camera to video yaw offset before video starts (if configured).
+      // Snap camera to configured video angle (hidden behind black since panorama is unmounted).
       // Negate because panorama angles are right-positive but euler.y is left-positive.
       if (videoYawOffset) setVideoYawOverride(-videoYawOffset);
-      // Capture current camera yaw so the next node starts in the same direction
-      setEntryYaw(lastYawRef.current * (180 / Math.PI));
+      // Destination node entry angle: configured offset, or preserve user's current rotation.
+      setEntryYaw(videoYawOffset ? -videoYawOffset : lastYawRef.current * (180 / Math.PI));
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
-      // No video — fade to black, switch node, fade from black
+      // No video — cancel any ongoing transition, then fade to black, switch, fade back
       setEntryYaw(lastYawRef.current * (180 / Math.PI));
+      setVideoYawOverride(null); // clear any stale video-yaw so it doesn't override entryYaw on remount
+      cancelTransition();
       setFadeOverlay(true);
       setTimeout(() => {
         setActiveNodeId(targetNodeId);
@@ -71,6 +74,9 @@ export default function TourPage() {
   // ─── Sidebar quick-jump (no transition video) ─────────────────────────────
   const handleSidebarNavigate = async (targetNodeId) => {
     if (targetNodeId === activeNodeId || !project) return;
+    cancelTransition(); // stop any playing transition video
+    setVideoYawOverride(null); // clear stale video-yaw so new node starts at its own initialYawOffset
+    setEntryYaw(null);         // reset to let the target node use its own initialYawOffset
     const targetNode = project.nodes?.[targetNodeId];
     await preloadNextAssets(targetNode, null);
     setActiveNodeId(targetNodeId);
@@ -78,9 +84,9 @@ export default function TourPage() {
 
   // ─── Transition complete: fade overlay → switch node → fade out ──────────────────
   const handleTransitionComplete = () => {
-    // VideoSphere already faded to black; show overlay during panorama swap
+    // VideoSphere already faded to black; show overlay during panorama swap.
+    // entryYaw was set from videoInitialYawOffset when navigation started — do not overwrite.
     setFadeOverlay(true);
-    setEntryYaw(lastYawRef.current * (180 / Math.PI));
     setVideoYawOverride(null);
     setTimeout(() => {
       onTransitionComplete();
