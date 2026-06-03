@@ -47,36 +47,74 @@ export default function TourPage() {
     playMode = "forward",
     transitionId,
     videoYawOffset = 0,
+    reverseVideoUrl = null,
   ) => {
     if (!project) return;
     const targetNode = project.nodes?.[targetNodeId];
-    // Resolve URL: embedded field (new) OR transitions Map (legacy)
-    const resolvedUrl =
-      videoUrl || project.transitions?.[transitionId]?.videoUrl || null;
+
+    let resolvedUrl;
+    // effectiveYawOffset may be overridden by auto-lookup below
+    let effectiveYawOffset = videoYawOffset;
+
+    if (playMode === "backward") {
+      // 1. Try reverse URL from the backward hotspot itself or its shared transition record
+      let resolvedReverse =
+        reverseVideoUrl ||
+        project.transitions?.[transitionId]?.reverseVideoUrl ||
+        null;
+
+      // 2. Auto-lookup: if still nothing, find the corresponding forward hotspot on the
+      //    target node (the one pointing back to activeNodeId) and borrow its reverse URL.
+      //    This lets a backward hotspot work without re-uploading the video.
+      if (!resolvedReverse) {
+        const targetNodeData = project.nodes?.[targetNodeId];
+        const forwardHotspot = targetNodeData?.navigationHotspots?.find(
+          (hs) => hs.targetNodeId === activeNodeId,
+        );
+        if (forwardHotspot) {
+          resolvedReverse =
+            forwardHotspot.reverseTransitionVideoUrl ||
+            project.transitions?.[forwardHotspot.transitionId]
+              ?.reverseVideoUrl ||
+            null;
+        }
+      }
+
+      // Never fall back to the forward video — playing it "backward" looks wrong.
+      // If no reverse is available yet, the transition falls through to a simple fade.
+      resolvedUrl = resolvedReverse || null;
+    } else {
+      resolvedUrl =
+        videoUrl || project.transitions?.[transitionId]?.videoUrl || null;
+    }
+
     const transitionData = resolvedUrl ? { videoUrl: resolvedUrl } : null;
 
     // Background preload — fires and resolves before the transition starts
     await preloadNextAssets(targetNode, transitionData);
 
     if (resolvedUrl) {
-      // Snap camera to configured video angle (hidden behind black since panorama is unmounted).
-      // Negate because panorama angles are right-positive but euler.y is left-positive.
-      if (videoYawOffset) setVideoYawOverride(-videoYawOffset);
-      // Destination node entry angle: configured offset, or preserve user's current rotation.
-      setEntryYaw(
-        videoYawOffset ? -videoYawOffset : lastYawRef.current * (180 / Math.PI),
-      );
+      // Separate user drag from the video's configured angle, then combine:
+      //   nodeBaseEulerYDeg = the euler.y angle the camera mounted at for this node
+      //   userDragDeltaDeg  = how much the user has dragged FROM that base (0 if no drag)
+      //   combinedEulerYDeg = -(videoInitialYawOffset) + userDragDeltaDeg
+      //
+      // Example: videoInitialYawOffset=270, no drag → combined = -270° (euler.y) = 270° right
+      const nodeBaseEulerYDeg =
+        entryYaw !== null ? entryYaw : -(activeNode.initialYawOffset || 0);
+      const userDragDeltaDeg =
+        lastYawRef.current * (180 / Math.PI) - nodeBaseEulerYDeg;
+      const combinedEulerYDeg = -effectiveYawOffset + userDragDeltaDeg;
+      setVideoYawOverride(combinedEulerYDeg);
+      setEntryYaw(combinedEulerYDeg);
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
-      // No video — cancel any ongoing transition, then fade to black, switch, fade back
+      // No video — use cross-fade transition via SphereViewer
       setEntryYaw(lastYawRef.current * (180 / Math.PI));
       setVideoYawOverride(null); // clear any stale video-yaw so it doesn't override entryYaw on remount
       cancelTransition();
-      setFadeOverlay(true);
-      setTimeout(() => {
-        setActiveNodeId(targetNodeId);
-        setTimeout(() => setFadeOverlay(false), 50);
-      }, FADE_MS);
+      // SphereViewer will handle the cross-fade automatically
+      setActiveNodeId(targetNodeId);
     }
   };
 
@@ -93,14 +131,9 @@ export default function TourPage() {
 
   // ─── Transition complete: fade overlay → switch node → fade out ──────────────────
   const handleTransitionComplete = () => {
-    // VideoSphere already faded to black; show overlay during panorama swap.
-    // entryYaw was set from videoInitialYawOffset when navigation started — do not overwrite.
-    setFadeOverlay(true);
+    // Video ended - panorama will cross-fade automatically in SphereViewer
     setVideoYawOverride(null);
-    setTimeout(() => {
-      onTransitionComplete();
-      setTimeout(() => setFadeOverlay(false), 50);
-    }, 80);
+    onTransitionComplete();
   };
 
   if (loading) {
@@ -155,14 +188,16 @@ export default function TourPage() {
         audioEnabled={audioEnabled}
       />
 
-      {/* ── Black fade overlay for smooth transitions ── */}
-      <div
-        className="absolute inset-0 z-50 bg-black pointer-events-none"
-        style={{
-          opacity: fadeOverlay ? 1 : 0,
-          transition: `opacity ${FADE_MS}ms ease`,
-        }}
-      />
+      {/* ── Black fade overlay (only for sidebar navigation) ── */}
+      {fadeOverlay && (
+        <div
+          className="absolute inset-0 z-50 bg-black pointer-events-none"
+          style={{
+            opacity: 1,
+            transition: `opacity ${FADE_MS}ms ease`,
+          }}
+        />
+      )}
 
       {/* ── Node title badge ── */}
       <div

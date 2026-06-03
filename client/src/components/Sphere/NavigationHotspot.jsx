@@ -17,9 +17,10 @@ export default function NavigationHotspot({ hotspot, onNavigate }) {
 
   const handleClick = (e) => {
     e.stopPropagation();
-    // Pass embedded URL + transitionId for backward-compat fallback
     const videoUrl = hotspot.transitionVideoUrl || null;
-    onNavigate(hotspot.targetNodeId, videoUrl, hotspot.playMode, hotspot.transitionId, hotspot.videoInitialYawOffset ?? 0);
+    const reverseVideoUrl = hotspot.reverseTransitionVideoUrl || null;
+    // Pass both URLs; TourPage resolves which to use based on playMode
+    onNavigate(hotspot.targetNodeId, videoUrl, hotspot.playMode, hotspot.transitionId, hotspot.videoInitialYawOffset ?? 0, reverseVideoUrl);
   };
 
   const scale = hotspot.scale || { width: 1, height: 1 };

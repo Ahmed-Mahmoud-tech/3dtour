@@ -1,12 +1,12 @@
-import { Router } from 'express';
-import { protect } from '../middleware/auth.js';
+import { Router } from "express";
+import { protect } from "../middleware/auth.js";
 import {
   setUploadDir,
   uploadPanorama,
   uploadVideo,
   uploadAudio,
   uploadImage,
-} from '../middleware/upload.js';
+} from "../middleware/upload.js";
 import {
   uploadPanoramaHandler,
   uploadAudioHandler,
@@ -14,47 +14,47 @@ import {
   uploadTransitionVideo,
   streamVideo,
   getReverseStatus,
-} from '../controllers/mediaController.js';
+} from "../controllers/mediaController.js";
 
 const router = Router();
 
 // Public video streaming endpoint (supports HTTP Range)
-router.get('/stream/:folder/:filename', streamVideo);
+router.get("/stream/:folder/:filename", streamVideo);
 
 // Public reverse-status polling endpoint
-router.get('/reverse-status/:projectId/:transitionId', getReverseStatus);
+router.get("/reverse-status/:projectId/:transitionId", getReverseStatus);
 
 // Protected upload endpoints
 router.post(
-  '/panorama',
+  "/panorama",
   protect,
-  setUploadDir('panoramas'),
+  setUploadDir("panoramas"),
   (req, res, next) => uploadPanorama(req, res, next),
-  uploadPanoramaHandler
+  uploadPanoramaHandler,
 );
 
 router.post(
-  '/audio',
+  "/audio",
   protect,
-  setUploadDir('audio'),
+  setUploadDir("audio"),
   (req, res, next) => uploadAudio(req, res, next),
-  uploadAudioHandler
+  uploadAudioHandler,
 );
 
 router.post(
-  '/image',
+  "/image",
   protect,
-  setUploadDir('images'),
+  setUploadDir("images"),
   (req, res, next) => uploadImage(req, res, next),
-  uploadImageHandler
+  uploadImageHandler,
 );
 
 router.post(
-  '/video/:projectId',
+  "/video/:projectId",
   protect,
-  setUploadDir('videos'),
+  setUploadDir("videos"),
   (req, res, next) => uploadVideo(req, res, next),
-  uploadTransitionVideo
+  uploadTransitionVideo,
 );
 
 export default router;

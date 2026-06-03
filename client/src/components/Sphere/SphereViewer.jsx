@@ -10,12 +10,41 @@ const SPHERE_RADIUS = 50;
 // ─── Panorama Sphere Mesh ─────────────────────────────────────────────────────
 // Converts the equirectangular texture to a cubemap and uses it as scene.background.
 // This gives true rectilinear projection — straight lines stay straight.
-function PanoramaSphere({ panoramaUrl }) {
+function PanoramaSphere({ panoramaUrl, opacity = 1, onFadeComplete }) {
   const texture = useTexture(panoramaUrl);
   const { gl, scene } = useThree();
+  const opacityRef = useRef(opacity);
+  const matRef = useRef();
+  const onFadeCompleteRef = useRef(onFadeComplete);
+
+  useEffect(() => {
+    onFadeCompleteRef.current = onFadeComplete;
+  });
+
+  // Smooth fade animation
+  useFrame(() => {
+    if (matRef.current) {
+      const target = opacity;
+      const current = opacityRef.current;
+      if (Math.abs(current - target) > 0.01) {
+        // Smooth fade: ~16-20 frames
+        opacityRef.current += (target - current) * 0.08;
+        matRef.current.opacity = opacityRef.current;
+      } else if (current !== target) {
+        opacityRef.current = target;
+        matRef.current.opacity = target;
+        if (target === 0 && onFadeCompleteRef.current) {
+          onFadeCompleteRef.current();
+        }
+      }
+    }
+  });
 
   useEffect(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.repeat.x = -1;
+    texture.offset.x = 1; // fixes seam/cutting caused by negative repeat
     texture.needsUpdate = true;
 
     const pmrem = new THREE.PMREMGenerator(gl);
@@ -29,7 +58,19 @@ function PanoramaSphere({ panoramaUrl }) {
     };
   }, [texture, gl, scene]);
 
-  return null;
+  // Render a transparent sphere for cross-fade effect
+  return (
+    <mesh>
+      <sphereGeometry args={[SPHERE_RADIUS, 128, 64]} />
+      <meshBasicMaterial
+        ref={matRef}
+        map={texture}
+        side={THREE.BackSide}
+        transparent
+        opacity={opacityRef.current}
+      />
+    </mesh>
+  );
 }
 
 // ─── Drag-to-pan Camera Controls ─────────────────────────────────────────────
@@ -160,6 +201,7 @@ function VideoSphere({ videoUrl, onEnded }) {
   const opacityRef = useRef(0);
   const fadingOutRef = useRef(false);
   const onEndedCalledRef = useRef(false);
+  const fadeCompleteCalledRef = useRef(false);
   const matRef = useRef();
   // Keep latest onEnded in a ref to avoid re-creating the video on callback change
   const onEndedRef = useRef(onEnded);
@@ -172,18 +214,22 @@ function VideoSphere({ videoUrl, onEnded }) {
     if (texture) texture.needsUpdate = true;
     if (matRef.current) {
       if (fadingOutRef.current) {
-        // Fade out: ~13 frames to fully transparent at 60 fps
+        // Fade out smoothly: ~25 frames to fully transparent at 60 fps
+        // Call onEnded immediately when fade starts (not when complete)
         if (!onEndedCalledRef.current) {
-          opacityRef.current = Math.max(0, opacityRef.current - 0.08);
+          onEndedCalledRef.current = true;
+          onEndedRef.current?.();
+        }
+        if (!fadeCompleteCalledRef.current) {
+          opacityRef.current = Math.max(0, opacityRef.current - 0.04);
           matRef.current.opacity = opacityRef.current;
           if (opacityRef.current === 0) {
-            onEndedCalledRef.current = true;
-            onEndedRef.current?.();
+            fadeCompleteCalledRef.current = true;
           }
         }
       } else if (opacityRef.current < 1) {
-        // Fade in: ~16 frames to fully opaque at 60 fps
-        opacityRef.current = Math.min(1, opacityRef.current + 0.06);
+        // Fade in smoothly: ~25 frames to fully opaque at 60 fps
+        opacityRef.current = Math.min(1, opacityRef.current + 0.04);
         matRef.current.opacity = opacityRef.current;
       }
     }
@@ -194,6 +240,7 @@ function VideoSphere({ videoUrl, onEnded }) {
     opacityRef.current = 0;
     fadingOutRef.current = false;
     onEndedCalledRef.current = false;
+    fadeCompleteCalledRef.current = false;
 
     const video = document.createElement("video");
     // Set attributes BEFORE src to avoid CORS / load-order issues
@@ -267,6 +314,7 @@ function VideoSphere({ videoUrl, onEnded }) {
 // ─── Scene Root ───────────────────────────────────────────────────────────────
 function Scene({
   node,
+  previousNode,
   hotspotVisible,
   onNavigate,
   onSignClick,
@@ -275,6 +323,9 @@ function Scene({
   transitionVideoUrl,
   onTransitionComplete,
   videoYawOverride,
+  panoramaOpacity,
+  previousPanoramaOpacity,
+  onPreviousFadeComplete,
 }) {
   return (
     <>
@@ -284,8 +335,22 @@ function Scene({
         onYawChange={onYawChange}
         videoYawOverride={videoYawOverride}
       />
-      {/* Hide panorama while video is playing — VideoSphere fades in over black, avoiding a wrong-angle flash */}
-      {!transitionVideoUrl && <PanoramaSphere panoramaUrl={node.panoramaUrl} />}
+      
+      {/* Previous panorama fading out */}
+      {previousNode && previousPanoramaOpacity > 0 && (
+        <PanoramaSphere
+          panoramaUrl={previousNode.panoramaUrl}
+          opacity={previousPanoramaOpacity}
+          onFadeComplete={onPreviousFadeComplete}
+        />
+      )}
+      
+      {/* Current panorama - always rendered, visible under video fade-out */}
+      <PanoramaSphere 
+        panoramaUrl={node.panoramaUrl} 
+        opacity={panoramaOpacity}
+      />
+      
       {/* Video sphere sits in front; only appears once first frame is decoded */}
       {transitionVideoUrl && (
         <VideoSphere
@@ -329,6 +394,42 @@ export default function SphereViewer({
   onTransitionComplete,
   videoYawOverride,
 }) {
+  const [previousNode, setPreviousNode] = useState(null);
+  const [panoramaOpacity, setPanoramaOpacity] = useState(1);
+  const [previousPanoramaOpacity, setPreviousPanoramaOpacity] = useState(0);
+  const nodeIdRef = useRef(node?.id);
+  const panoramaUrlRef = useRef(node?.panoramaUrl);
+
+  // Detect node change and trigger cross-fade
+  useEffect(() => {
+    if (node && nodeIdRef.current !== node.id) {
+      // Store previous node for fade out
+      setPreviousNode({ 
+        id: nodeIdRef.current, 
+        panoramaUrl: panoramaUrlRef.current 
+      });
+      setPreviousPanoramaOpacity(1);
+      setPanoramaOpacity(0);
+      nodeIdRef.current = node.id;
+      panoramaUrlRef.current = node.panoramaUrl;
+      
+      // Start cross-fade
+      requestAnimationFrame(() => {
+        setPreviousPanoramaOpacity(0);
+        setPanoramaOpacity(1);
+      });
+    } else if (node && !previousNode) {
+      // First load
+      nodeIdRef.current = node?.id;
+      panoramaUrlRef.current = node?.panoramaUrl;
+      setPanoramaOpacity(1);
+    }
+  }, [node?.id]);
+
+  const handlePreviousFadeComplete = useCallback(() => {
+    setPreviousNode(null);
+  }, []);
+
   if (!node) return null;
 
   // entryYaw (initialYaw prop) is already in internal euler.y-degrees space.
@@ -355,6 +456,7 @@ export default function SphereViewer({
     >
       <Scene
         node={node}
+        previousNode={previousNode}
         hotspotVisible={hotspotVisible}
         onNavigate={onNavigate}
         onSignClick={onSignClick}
@@ -363,6 +465,9 @@ export default function SphereViewer({
         transitionVideoUrl={transitionVideoUrl}
         onTransitionComplete={onTransitionComplete}
         videoYawOverride={videoYawOverride}
+        panoramaOpacity={panoramaOpacity}
+        previousPanoramaOpacity={previousPanoramaOpacity}
+        onPreviousFadeComplete={handlePreviousFadeComplete}
       />
     </Canvas>
   );

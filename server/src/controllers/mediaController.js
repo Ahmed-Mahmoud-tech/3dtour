@@ -27,9 +27,12 @@ const reverseVideo = (inputPath) =>
     const uniqueName = `${Date.now()}-${uuidv4().slice(0, 8)}_reversed${ext}`;
     const outputPath = path.join(path.dirname(inputPath), uniqueName);
 
+    // Strip audio entirely — transition clips are always muted in the viewer,
+    // and `areverse` fails when the source has no audio track.
     ffmpeg(inputPath)
       .videoFilters('reverse')
-      .audioFilters('areverse')
+      .noAudio()
+      .outputOptions(['-pix_fmt', 'yuv420p']) // broad browser compatibility
       .output(outputPath)
       .on('end', () => resolve(outputPath))
       .on('error', (err) => reject(err))
@@ -98,10 +101,22 @@ export const uploadTransitionVideo = async (req, res) => {
 
       if (projectId && transitionId) {
         const project = await Project.findById(projectId);
-        if (project && project.transitions.has(transitionId)) {
-          const transition = project.transitions.get(transitionId);
-          transition.reverseVideoUrl = reverseVideoUrl;
-          project.transitions.set(transitionId, transition);
+        if (project) {
+          // Patch the shared transition record
+          if (project.transitions.has(transitionId)) {
+            const transition = project.transitions.get(transitionId);
+            transition.reverseVideoUrl = reverseVideoUrl;
+            project.transitions.set(transitionId, transition);
+          }
+          // Also patch any hotspot that embeds this transitionId directly
+          project.nodes.forEach((node) => {
+            node.navigationHotspots.forEach((hs) => {
+              if (hs.transitionId === transitionId) {
+                hs.reverseTransitionVideoUrl = reverseVideoUrl;
+              }
+            });
+          });
+          project.markModified('nodes');
           await project.save();
         }
       }
