@@ -1,10 +1,18 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { projectApi, nodeApi, mediaApi } from '../api/projectApi.js';
+import { useState, useEffect } from "react";
+import { useParams, Link } from "react-router-dom";
+import { projectApi, nodeApi, mediaApi } from "../api/projectApi.js";
+import NodeEditModal from "../components/Studio/NodeEditModal.jsx";
 import {
-  FaArrowLeft, FaPlus, FaTrash, FaCube, FaGlobe,
-  FaSave, FaSyncAlt, FaExternalLinkAlt,
-} from 'react-icons/fa';
+  FaArrowLeft,
+  FaPlus,
+  FaTrash,
+  FaCube,
+  FaGlobe,
+  FaSave,
+  FaSyncAlt,
+  FaExternalLinkAlt,
+  FaEdit,
+} from "react-icons/fa";
 
 /**
  * ProjectEditPage
@@ -17,30 +25,42 @@ import {
  */
 export default function ProjectEditPage() {
   const { projectId } = useParams();
-  const [project, setProject]   = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [meta, setMeta]         = useState({ title: '', author: '' });
+  const [project, setProject] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [meta, setMeta] = useState({ title: "", author: "" });
   const [audioFile, setAudioFile] = useState(null);
   const [audioUploading, setAudioUploading] = useState(false);
 
   // New node form
-  const [newNode, setNewNode]   = useState({ displayName: '', initialYawOffset: 0 });
+  const [newNode, setNewNode] = useState({
+    displayName: "",
+    initialYawOffset: 0,
+  });
   const [panoramaFile, setPanoramaFile] = useState(null);
   const [nodeUploading, setNodeUploading] = useState(false);
+
+  // Edit node state
+  const [editingNode, setEditingNode] = useState(null);
+  const [nodeUpdating, setNodeUpdating] = useState(false);
 
   const fetchProject = async () => {
     setLoading(true);
     try {
       const data = await projectApi.get(projectId);
       setProject(data);
-      setMeta({ title: data.info?.title || '', author: data.info?.author || '' });
+      setMeta({
+        title: data.info?.title || "",
+        author: data.info?.author || "",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchProject(); }, [projectId]);
+  useEffect(() => {
+    fetchProject();
+  }, [projectId]);
 
   // ─── Save metadata ──────────────────────────────────────────────────────
   const handleSaveMeta = async (e) => {
@@ -89,7 +109,7 @@ export default function ProjectEditPage() {
         initialYawOffset: parseFloat(newNode.initialYawOffset) || 0,
       });
       await fetchProject();
-      setNewNode({ displayName: '', initialYawOffset: 0 });
+      setNewNode({ displayName: "", initialYawOffset: 0 });
       setPanoramaFile(null);
     } finally {
       setNodeUploading(false);
@@ -104,9 +124,28 @@ export default function ProjectEditPage() {
     await fetchProject();
   };
 
+  // ─── Edit node ───────────────────────────────────────────────────────────
+  const handleEditNode = (node) => {
+    setEditingNode(node);
+  };
+
+  const handleUpdateNode = async (updateData) => {
+    setNodeUpdating(true);
+    try {
+      await nodeApi.update(projectId, editingNode.id, updateData);
+      await fetchProject();
+      setEditingNode(null);
+    } catch (err) {
+      console.error("Failed to update node:", err);
+      alert("Failed to update node");
+    } finally {
+      setNodeUpdating(false);
+    }
+  };
+
   // ─── Delete node ─────────────────────────────────────────────────────────
   const handleDeleteNode = async (nodeId) => {
-    if (!window.confirm('Delete this node and all its hotspots/signs?')) return;
+    if (!window.confirm("Delete this node and all its hotspots/signs?")) return;
     await nodeApi.delete(projectId, nodeId);
     await fetchProject();
   };
@@ -127,11 +166,16 @@ export default function ProjectEditPage() {
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 bg-gray-950 z-10">
         <div className="flex items-center gap-3">
-          <Link to="/projects" className="flex items-center gap-2 text-gray-400 hover:text-white text-sm transition-colors">
+          <Link
+            to="/projects"
+            className="flex items-center gap-2 text-gray-400 hover:text-white text-sm transition-colors"
+          >
             <FaArrowLeft size={12} />
           </Link>
           <FaGlobe className="text-blue-400" size={18} />
-          <h1 className="font-bold text-white truncate max-w-xs">{project?.info?.title}</h1>
+          <h1 className="font-bold text-white truncate max-w-xs">
+            {project?.info?.title}
+          </h1>
         </div>
         <div className="flex items-center gap-3">
           <a
@@ -154,7 +198,6 @@ export default function ProjectEditPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8 flex flex-col gap-8">
-
         {/* ── Section: Project Metadata ── */}
         <section className="admin-card">
           <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
@@ -164,18 +207,37 @@ export default function ProjectEditPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="admin-label">Title</label>
-                <input className="admin-input" value={meta.title}
-                  onChange={(e) => setMeta((m) => ({ ...m, title: e.target.value }))} required />
+                <input
+                  className="admin-input"
+                  value={meta.title}
+                  onChange={(e) =>
+                    setMeta((m) => ({ ...m, title: e.target.value }))
+                  }
+                  required
+                />
               </div>
               <div>
                 <label className="admin-label">Author</label>
-                <input className="admin-input" value={meta.author}
-                  onChange={(e) => setMeta((m) => ({ ...m, author: e.target.value }))} />
+                <input
+                  className="admin-input"
+                  value={meta.author}
+                  onChange={(e) =>
+                    setMeta((m) => ({ ...m, author: e.target.value }))
+                  }
+                />
               </div>
             </div>
             <div className="flex justify-end">
-              <button type="submit" disabled={saving} className="admin-btn-primary flex items-center gap-2">
-                {saving ? <FaSyncAlt size={12} className="animate-spin" /> : <FaSave size={12} />}
+              <button
+                type="submit"
+                disabled={saving}
+                className="admin-btn-primary flex items-center gap-2"
+              >
+                {saving ? (
+                  <FaSyncAlt size={12} className="animate-spin" />
+                ) : (
+                  <FaSave size={12} />
+                )}
                 Save
               </button>
             </div>
@@ -184,7 +246,9 @@ export default function ProjectEditPage() {
 
         {/* ── Section: Background Audio ── */}
         <section className="admin-card">
-          <h2 className="text-sm font-semibold text-white mb-4">Background Audio</h2>
+          <h2 className="text-sm font-semibold text-white mb-4">
+            Background Audio
+          </h2>
           {project?.settings?.globalBackgroundAudio?.src && (
             <p className="text-xs text-green-400 mb-3 break-all">
               Current: {project.settings.globalBackgroundAudio.src}
@@ -205,7 +269,9 @@ export default function ProjectEditPage() {
               disabled={!audioFile || audioUploading}
               className="admin-btn-primary flex items-center gap-2"
             >
-              {audioUploading ? <FaSyncAlt size={12} className="animate-spin" /> : null}
+              {audioUploading ? (
+                <FaSyncAlt size={12} className="animate-spin" />
+              ) : null}
               Upload
             </button>
           </div>
@@ -219,21 +285,31 @@ export default function ProjectEditPage() {
 
           {/* Node list */}
           {nodes.length === 0 ? (
-            <p className="text-gray-600 text-sm mb-4">No nodes yet. Add your first 360° room below.</p>
+            <p className="text-gray-600 text-sm mb-4">
+              No nodes yet. Add your first 360° room below.
+            </p>
           ) : (
             <div className="space-y-2 mb-6">
               {nodes.map((node) => (
-                <div key={node.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/50 border border-gray-800">
+                <div
+                  key={node.id}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/50 border border-gray-800"
+                >
                   <div className="w-12 h-8 rounded overflow-hidden flex-shrink-0 bg-gray-700">
-                    <img src={node.panoramaUrl} alt={node.displayName}
-                      className="w-full h-full object-cover" />
+                    <img
+                      src={node.panoramaUrl}
+                      alt={node.displayName}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white font-medium truncate">{node.displayName}</p>
+                    <p className="text-sm text-white font-medium truncate">
+                      {node.displayName}
+                    </p>
                     <p className="text-xs text-gray-500">
                       Yaw offset: {node.initialYawOffset}° &nbsp;·&nbsp;
-                      {node.navigationHotspots?.length || 0} hotspots &nbsp;·&nbsp;
+                      {node.navigationHotspots?.length || 0} hotspots
+                      &nbsp;·&nbsp;
                       {node.infoSigns?.length || 0} signs
                     </p>
                   </div>
@@ -251,8 +327,17 @@ export default function ProjectEditPage() {
                         Set Start
                       </button>
                     )}
-                    <button onClick={() => handleDeleteNode(node.id)}
-                      className="text-red-500/60 hover:text-red-400 transition-colors">
+                    <button
+                      onClick={() => handleEditNode(node)}
+                      className="text-blue-500/60 hover:text-blue-400 transition-colors"
+                      title="Edit node"
+                    >
+                      <FaEdit size={12} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteNode(node.id)}
+                      className="text-red-500/60 hover:text-red-400 transition-colors"
+                    >
                       <FaTrash size={12} />
                     </button>
                   </div>
@@ -262,23 +347,40 @@ export default function ProjectEditPage() {
           )}
 
           {/* Add node form */}
-          <form onSubmit={handleAddNode} className="border-t border-gray-800 pt-4 flex flex-col gap-3">
+          <form
+            onSubmit={handleAddNode}
+            className="border-t border-gray-800 pt-4 flex flex-col gap-3"
+          >
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
               <FaPlus size={10} /> Add New Node
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="admin-label">Room Name *</label>
-                <input className="admin-input" placeholder="e.g. Main Reception"
+                <input
+                  className="admin-input"
+                  placeholder="e.g. Main Reception"
                   value={newNode.displayName}
-                  onChange={(e) => setNewNode((n) => ({ ...n, displayName: e.target.value }))}
-                  required />
+                  onChange={(e) =>
+                    setNewNode((n) => ({ ...n, displayName: e.target.value }))
+                  }
+                  required
+                />
               </div>
               <div>
                 <label className="admin-label">Initial Yaw Offset (°)</label>
-                <input type="number" step="0.5" className="admin-input"
+                <input
+                  type="number"
+                  step="0.5"
+                  className="admin-input"
                   value={newNode.initialYawOffset}
-                  onChange={(e) => setNewNode((n) => ({ ...n, initialYawOffset: e.target.value }))} />
+                  onChange={(e) =>
+                    setNewNode((n) => ({
+                      ...n,
+                      initialYawOffset: e.target.value,
+                    }))
+                  }
+                />
               </div>
             </div>
             <div>
@@ -292,16 +394,32 @@ export default function ProjectEditPage() {
               />
             </div>
             <div className="flex justify-end">
-              <button type="submit" disabled={nodeUploading || !panoramaFile}
-                className="admin-btn-primary flex items-center gap-2">
-                {nodeUploading ? <FaSyncAlt size={12} className="animate-spin" /> : <FaPlus size={12} />}
+              <button
+                type="submit"
+                disabled={nodeUploading || !panoramaFile}
+                className="admin-btn-primary flex items-center gap-2"
+              >
+                {nodeUploading ? (
+                  <FaSyncAlt size={12} className="animate-spin" />
+                ) : (
+                  <FaPlus size={12} />
+                )}
                 Add Node
               </button>
             </div>
           </form>
         </section>
-
       </main>
+
+      {/* Node Edit Modal */}
+      {editingNode && (
+        <NodeEditModal
+          node={editingNode}
+          onClose={() => setEditingNode(null)}
+          onSave={handleUpdateNode}
+          saving={nodeUpdating}
+        />
+      )}
     </div>
   );
 }
