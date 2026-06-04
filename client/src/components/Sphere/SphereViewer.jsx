@@ -391,19 +391,24 @@ function Scene({
         />
       )}
 
-      {hotspotVisible &&
-        node.navigationHotspots?.map((hotspot) => (
-          <NavigationHotspot
-            key={hotspot.id}
-            hotspot={hotspot}
-            onNavigate={onNavigate}
-          />
-        ))}
+      {/* Hotspots and signs - rotated by same yawOffset as panorama to stay in correct position */}
+      <group
+        rotation={[0, THREE.MathUtils.degToRad(node.initialYawOffset || 0), 0]}
+      >
+        {hotspotVisible &&
+          node.navigationHotspots?.map((hotspot) => (
+            <NavigationHotspot
+              key={hotspot.id}
+              hotspot={hotspot}
+              onNavigate={onNavigate}
+            />
+          ))}
 
-      {hotspotVisible &&
-        node.infoSigns?.map((sign) => (
-          <InfoSign key={sign.id} sign={sign} onOpenPopup={onSignClick} />
-        ))}
+        {hotspotVisible &&
+          node.infoSigns?.map((sign) => (
+            <InfoSign key={sign.id} sign={sign} onOpenPopup={onSignClick} />
+          ))}
+      </group>
     </>
   );
 }
