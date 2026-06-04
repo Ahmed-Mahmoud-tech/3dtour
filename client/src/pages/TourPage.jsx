@@ -88,17 +88,26 @@ export default function TourPage() {
     // Background preload
     await preloadNextAssets(targetNode, transitionData);
 
-    // ─── Simple camera preservation: keep user's current view angle ───
-    // Camera angle is independent of panorama/video rotations
+    // ─── THREE INDEPENDENT VALUES ───
+    // 1. User Camera Drag (pure user input) - preserved across navigation
+    // 2. Target Panorama Rotation (from node.initialYawOffset) - rotates the image sphere
+    // 3. Video Rotation (from videoInitialYawOffset) - rotates the video sphere
     const currentCameraYaw = cameraYawRef.current; // in radians
+    const targetPanoramaRotation = targetNode.initialYawOffset || 0; // in degrees
 
-    console.log("=== NAVIGATION ===");
+    console.log("\n═══════════════════════════════════════════════");
+    console.log("🎯 NAVIGATION: 3 INDEPENDENT ROTATIONS");
+    console.log("───────────────────────────────────────────────");
     console.log(
-      "Camera Yaw (preserved):",
+      "1️⃣  USER CAMERA DRAG (preserved):",
       ((currentCameraYaw * 180) / Math.PI).toFixed(2) + "°",
     );
-    console.log("Video Yaw Offset:", videoYawOffset + "°");
-    console.log("==================");
+    console.log(
+      "2️⃣  TARGET PANORAMA IMAGE ROTATION:",
+      targetPanoramaRotation + "°",
+    );
+    console.log("3️⃣  VIDEO ROTATION:", videoYawOffset + "°");
+    console.log("═══════════════════════════════════════════════\n");
 
     if (resolvedUrl) {
       // Video transition: preserve camera, rotate video sphere
@@ -128,7 +137,17 @@ export default function TourPage() {
 
   // ─── Transition complete: video ended, clean up ──────────────────────────────
   const handleTransitionComplete = () => {
+    // IMPORTANT: Update preserved camera to CURRENT position (includes any dragging during video)
+    const currentCameraAfterVideo = cameraYawRef.current;
+    setPreservedCameraYaw(currentCameraAfterVideo);
     setVideoTextureYawOffset(null);
+
+    console.log(
+      "🎬 VIDEO ENDED - Camera position updated:",
+      ((currentCameraAfterVideo * 180) / Math.PI).toFixed(2) +
+        "° (includes any dragging during video)",
+    );
+
     onTransitionComplete();
   };
 

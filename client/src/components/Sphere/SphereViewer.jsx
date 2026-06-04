@@ -69,9 +69,9 @@ function PanoramaSphere({
   const rotationY = THREE.MathUtils.degToRad(yawOffset);
 
   console.log(
-    "Panorama Sphere Rotation:",
+    "📷 PANORAMA IMAGE ROTATION:",
     yawOffset + "°",
-    "for",
+    "(mesh rotation, independent of camera) -",
     panoramaUrl.split("/").pop(),
   );
 
@@ -107,8 +107,16 @@ function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
   useEffect(() => {
     if (preservedCameraYaw !== null) {
       euler.current.y = preservedCameraYaw; // already in radians
+      console.log(
+        "🎥 USER CAMERA DRAG (preserved):",
+        ((preservedCameraYaw * 180) / Math.PI).toFixed(2) + "°",
+        "(pure user input, independent of mesh rotation)",
+      );
     } else {
       euler.current.y = 0;
+      console.log(
+        "🎥 USER CAMERA DRAG (initial): 0° (pure user input, independent of mesh rotation)",
+      );
     }
     euler.current.x = 0;
     camera.quaternion.setFromEuler(euler.current);
@@ -139,6 +147,8 @@ function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
       euler.current.x = Math.max(-limit, Math.min(limit, euler.current.x));
 
       camera.quaternion.setFromEuler(euler.current);
+
+      // Report camera yaw changes from user drag
       onYawChangeRef.current?.(euler.current.y);
     },
     [camera],
@@ -311,10 +321,9 @@ function VideoSphere({ videoUrl, onEnded, textureYawOffset = 0 }) {
   const rotationY = THREE.MathUtils.degToRad(textureYawOffset);
 
   console.log(
-    "Video Sphere Rotation Applied:",
+    "🎬 VIDEO ROTATION:",
     textureYawOffset + "°",
-    "Radians:",
-    rotationY.toFixed(3),
+    "(mesh rotation, independent of camera)",
   );
 
   return (
