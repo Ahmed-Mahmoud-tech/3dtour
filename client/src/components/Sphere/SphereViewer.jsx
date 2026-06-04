@@ -10,11 +10,18 @@ const SPHERE_RADIUS = 50;
 // ─── Panorama Sphere Mesh ─────────────────────────────────────────────────────
 // Converts the equirectangular texture to a cubemap and uses it as scene.background.
 // This gives true rectilinear projection — straight lines stay straight.
-function PanoramaSphere({ panoramaUrl, opacity = 1, onFadeComplete }) {
+// The sphere is rotated by initialYawOffset so all panoramas align to the same world direction.
+function PanoramaSphere({
+  panoramaUrl,
+  opacity = 1,
+  onFadeComplete,
+  yawOffset = 0,
+}) {
   const texture = useTexture(panoramaUrl);
   const { gl, scene } = useThree();
   const opacityRef = useRef(opacity);
   const matRef = useRef();
+  const meshRef = useRef();
   const onFadeCompleteRef = useRef(onFadeComplete);
 
   useEffect(() => {
@@ -58,9 +65,19 @@ function PanoramaSphere({ panoramaUrl, opacity = 1, onFadeComplete }) {
     };
   }, [texture, gl, scene]);
 
+  // Rotate sphere mesh by yawOffset to align all panoramas to the same world direction
+  const rotationY = THREE.MathUtils.degToRad(yawOffset);
+
+  console.log(
+    "Panorama Sphere Rotation:",
+    yawOffset + "°",
+    "for",
+    panoramaUrl.split("/").pop(),
+  );
+
   // Render a transparent sphere for cross-fade effect
   return (
-    <mesh>
+    <mesh ref={meshRef} rotation={[0, rotationY, 0]}>
       <sphereGeometry args={[SPHERE_RADIUS, 128, 64]} />
       <meshBasicMaterial
         ref={matRef}
@@ -74,44 +91,35 @@ function PanoramaSphere({ panoramaUrl, opacity = 1, onFadeComplete }) {
 }
 
 // ─── Drag-to-pan Camera Controls ─────────────────────────────────────────────
-function PanoramaControls({
-  initialYawOffset = 0,
-  onYawChange,
-  videoYawOverride,
-}) {
+// Camera only responds to user drag. Initial position is 0,0 unless preserved from previous navigation.
+function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
   const { camera, gl } = useThree();
   const isDragging = useRef(false);
   const prevMouse = useRef({ x: 0, y: 0 });
   const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
-  // Use a ref so callbacks don't force useCallback recreation on every render
   const onYawChangeRef = useRef(onYawChange);
+
   useEffect(() => {
     onYawChangeRef.current = onYawChange;
   });
 
-  // Apply initial yaw on mount only; key={node.id} on parent remounts this on node change
+  // Set camera to preserved position on mount, or 0,0 if first visit
   useEffect(() => {
-    euler.current.y = THREE.MathUtils.degToRad(initialYawOffset);
+    if (preservedCameraYaw !== null) {
+      euler.current.y = preservedCameraYaw; // already in radians
+    } else {
+      euler.current.y = 0;
+    }
     euler.current.x = 0;
     camera.quaternion.setFromEuler(euler.current);
-    // Seed lastYawRef so first navigation preserves the initial yaw even without dragging
     onYawChangeRef.current?.(euler.current.y);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Snap camera to videoYawOverride when a video transition starts
-  useEffect(() => {
-    if (videoYawOverride == null) return;
-    euler.current.y = THREE.MathUtils.degToRad(videoYawOverride);
-    camera.quaternion.setFromEuler(euler.current);
-    onYawChangeRef.current?.(euler.current.y);
-  }, [videoYawOverride, camera]);
-
   const onPointerDown = useCallback((e) => {
-    e.preventDefault(); // stop browser image-drag / text-selection
+    e.preventDefault();
     isDragging.current = true;
     prevMouse.current = { x: e.clientX, y: e.clientY };
-    // Lock pointer to canvas so fast moves don't escape
     e.target.setPointerCapture(e.pointerId);
   }, []);
 
@@ -131,7 +139,6 @@ function PanoramaControls({
       euler.current.x = Math.max(-limit, Math.min(limit, euler.current.x));
 
       camera.quaternion.setFromEuler(euler.current);
-      // Report yaw on every move so callers always have the latest value
       onYawChangeRef.current?.(euler.current.y);
     },
     [camera],
@@ -196,13 +203,14 @@ function PanoramaControls({
 }
 
 // ─── Video Sphere (transition video mapped onto the sphere) ──────────────────
-function VideoSphere({ videoUrl, onEnded }) {
+function VideoSphere({ videoUrl, onEnded, textureYawOffset = 0 }) {
   const [texture, setTexture] = useState(null);
   const opacityRef = useRef(0);
   const fadingOutRef = useRef(false);
   const onEndedCalledRef = useRef(false);
   const fadeCompleteCalledRef = useRef(false);
   const matRef = useRef();
+  const meshRef = useRef();
   // Keep latest onEnded in a ref to avoid re-creating the video on callback change
   const onEndedRef = useRef(onEnded);
   useEffect(() => {
@@ -255,6 +263,8 @@ function VideoSphere({ videoUrl, onEnded }) {
     tex.offset.x = 1; // fixes seam/cutting caused by negative repeat
     tex.colorSpace = THREE.SRGBColorSpace;
 
+    console.log("Video Texture Yaw Offset:", textureYawOffset + "°");
+
     const handlePlaying = () => {
       // Only show sphere once the first frame is actually decoded — no black flash
       if (mounted) setTexture(tex);
@@ -292,12 +302,23 @@ function VideoSphere({ videoUrl, onEnded }) {
       video.src = "";
       tex.dispose();
     };
-  }, [videoUrl]);
+  }, [videoUrl, textureYawOffset]);
 
   if (!texture) return null;
 
+  // Rotate the entire mesh to apply the video's yaw offset
+  // Convert degrees to radians; positive rotation = clockwise from above
+  const rotationY = THREE.MathUtils.degToRad(textureYawOffset);
+
+  console.log(
+    "Video Sphere Rotation Applied:",
+    textureYawOffset + "°",
+    "Radians:",
+    rotationY.toFixed(3),
+  );
+
   return (
-    <mesh>
+    <mesh ref={meshRef} rotation={[0, rotationY, 0]}>
       {/* Slightly smaller radius so video renders in front of PanoramaSphere */}
       <sphereGeometry args={[SPHERE_RADIUS - 0.1, 128, 64]} />
       <meshBasicMaterial
@@ -318,11 +339,11 @@ function Scene({
   hotspotVisible,
   onNavigate,
   onSignClick,
-  initialYaw,
+  preservedCameraYaw,
   onYawChange,
   transitionVideoUrl,
   onTransitionComplete,
-  videoYawOverride,
+  videoTextureYawOffset,
   panoramaOpacity,
   previousPanoramaOpacity,
   onPreviousFadeComplete,
@@ -331,31 +352,33 @@ function Scene({
     <>
       <PanoramaControls
         key={node.id}
-        initialYawOffset={initialYaw}
+        preservedCameraYaw={preservedCameraYaw}
         onYawChange={onYawChange}
-        videoYawOverride={videoYawOverride}
       />
-      
-      {/* Previous panorama fading out */}
+
+      {/* Previous panorama fading out - rotated by its yawOffset */}
       {previousNode && previousPanoramaOpacity > 0 && (
         <PanoramaSphere
           panoramaUrl={previousNode.panoramaUrl}
           opacity={previousPanoramaOpacity}
           onFadeComplete={onPreviousFadeComplete}
+          yawOffset={previousNode.initialYawOffset || 0}
         />
       )}
-      
-      {/* Current panorama - always rendered, visible under video fade-out */}
-      <PanoramaSphere 
-        panoramaUrl={node.panoramaUrl} 
+
+      {/* Current panorama - rotated by its yawOffset to align with world direction */}
+      <PanoramaSphere
+        panoramaUrl={node.panoramaUrl}
         opacity={panoramaOpacity}
+        yawOffset={node.initialYawOffset || 0}
       />
-      
-      {/* Video sphere sits in front; only appears once first frame is decoded */}
+
+      {/* Video sphere - rotated by video's yawOffset */}
       {transitionVideoUrl && (
         <VideoSphere
           videoUrl={transitionVideoUrl}
           onEnded={onTransitionComplete}
+          textureYawOffset={videoTextureYawOffset || 0}
         />
       )}
 
@@ -388,31 +411,38 @@ export default function SphereViewer({
   hotspotVisible,
   onNavigate,
   onSignClick,
-  initialYaw,
+  preservedCameraYaw,
   onYawChange,
   transitionVideoUrl,
   onTransitionComplete,
-  videoYawOverride,
+  videoTextureYawOffset,
 }) {
   const [previousNode, setPreviousNode] = useState(null);
   const [panoramaOpacity, setPanoramaOpacity] = useState(1);
   const [previousPanoramaOpacity, setPreviousPanoramaOpacity] = useState(0);
   const nodeIdRef = useRef(node?.id);
-  const panoramaUrlRef = useRef(node?.panoramaUrl);
+  const nodeDataRef = useRef({
+    panoramaUrl: node?.panoramaUrl,
+    initialYawOffset: node?.initialYawOffset,
+  });
 
   // Detect node change and trigger cross-fade
   useEffect(() => {
     if (node && nodeIdRef.current !== node.id) {
-      // Store previous node for fade out
-      setPreviousNode({ 
-        id: nodeIdRef.current, 
-        panoramaUrl: panoramaUrlRef.current 
+      // Store previous node data including yawOffset for proper rotation during fade
+      setPreviousNode({
+        id: nodeIdRef.current,
+        panoramaUrl: nodeDataRef.current.panoramaUrl,
+        initialYawOffset: nodeDataRef.current.initialYawOffset,
       });
       setPreviousPanoramaOpacity(1);
       setPanoramaOpacity(0);
       nodeIdRef.current = node.id;
-      panoramaUrlRef.current = node.panoramaUrl;
-      
+      nodeDataRef.current = {
+        panoramaUrl: node.panoramaUrl,
+        initialYawOffset: node.initialYawOffset,
+      };
+
       // Start cross-fade
       requestAnimationFrame(() => {
         setPreviousPanoramaOpacity(0);
@@ -421,7 +451,10 @@ export default function SphereViewer({
     } else if (node && !previousNode) {
       // First load
       nodeIdRef.current = node?.id;
-      panoramaUrlRef.current = node?.panoramaUrl;
+      nodeDataRef.current = {
+        panoramaUrl: node?.panoramaUrl,
+        initialYawOffset: node?.initialYawOffset,
+      };
       setPanoramaOpacity(1);
     }
   }, [node?.id]);
@@ -431,14 +464,6 @@ export default function SphereViewer({
   }, []);
 
   if (!node) return null;
-
-  // entryYaw (initialYaw prop) is already in internal euler.y-degrees space.
-  // node.initialYawOffset is a panorama angle (right = positive) which must be
-  // negated because Three.js camera rotates counter-clockwise for positive euler.y.
-  const effectiveYaw =
-    initialYaw !== null && initialYaw !== undefined
-      ? initialYaw
-      : -(node.initialYawOffset || 0);
 
   return (
     <Canvas
@@ -460,11 +485,11 @@ export default function SphereViewer({
         hotspotVisible={hotspotVisible}
         onNavigate={onNavigate}
         onSignClick={onSignClick}
-        initialYaw={effectiveYaw}
+        preservedCameraYaw={preservedCameraYaw}
         onYawChange={onYawChange}
         transitionVideoUrl={transitionVideoUrl}
         onTransitionComplete={onTransitionComplete}
-        videoYawOverride={videoYawOverride}
+        videoTextureYawOffset={videoTextureYawOffset}
         panoramaOpacity={panoramaOpacity}
         previousPanoramaOpacity={previousPanoramaOpacity}
         onPreviousFadeComplete={handlePreviousFadeComplete}

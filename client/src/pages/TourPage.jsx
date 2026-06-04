@@ -15,11 +15,12 @@ export default function TourPage() {
   // ─── Info popup state (rendered outside Canvas) ───────────────────────────
   const [activePopup, setActivePopup] = useState(null); // popupContent object
 
-  // ─── Camera yaw tracking for smooth hotspot navigation ──────────────────
-  const lastYawRef = useRef(0); // in radians, updated on every drag-end
-  const [entryYaw, setEntryYaw] = useState(null); // degrees — overrides initialYawOffset on navigate
-  // ─── Video initial yaw override ────────────────────────────────────────
-  const [videoYawOverride, setVideoYawOverride] = useState(null);
+  // ─── Camera yaw preservation across navigation ──────────────────────────────
+  const cameraYawRef = useRef(0); // in radians, updated on every drag
+  const [preservedCameraYaw, setPreservedCameraYaw] = useState(null); // radians - preserves user's view
+
+  // ─── Video texture yaw for rotation ─────────────────────────────────────────
+  const [videoTextureYawOffset, setVideoTextureYawOffset] = useState(null);
 
   // ─── Black fade overlay (no-video navigation + video-end transition) ──────
   const [fadeOverlay, setFadeOverlay] = useState(false);
@@ -53,19 +54,15 @@ export default function TourPage() {
     const targetNode = project.nodes?.[targetNodeId];
 
     let resolvedUrl;
-    // effectiveYawOffset may be overridden by auto-lookup below
-    let effectiveYawOffset = videoYawOffset;
 
     if (playMode === "backward") {
-      // 1. Try reverse URL from the backward hotspot itself or its shared transition record
+      // Try reverse URL from the backward hotspot itself or its shared transition record
       let resolvedReverse =
         reverseVideoUrl ||
         project.transitions?.[transitionId]?.reverseVideoUrl ||
         null;
 
-      // 2. Auto-lookup: if still nothing, find the corresponding forward hotspot on the
-      //    target node (the one pointing back to activeNodeId) and borrow its reverse URL.
-      //    This lets a backward hotspot work without re-uploading the video.
+      // Auto-lookup: find the corresponding forward hotspot on the target node
       if (!resolvedReverse) {
         const targetNodeData = project.nodes?.[targetNodeId];
         const forwardHotspot = targetNodeData?.navigationHotspots?.find(
@@ -80,8 +77,6 @@ export default function TourPage() {
         }
       }
 
-      // Never fall back to the forward video — playing it "backward" looks wrong.
-      // If no reverse is available yet, the transition falls through to a simple fade.
       resolvedUrl = resolvedReverse || null;
     } else {
       resolvedUrl =
@@ -90,30 +85,31 @@ export default function TourPage() {
 
     const transitionData = resolvedUrl ? { videoUrl: resolvedUrl } : null;
 
-    // Background preload — fires and resolves before the transition starts
+    // Background preload
     await preloadNextAssets(targetNode, transitionData);
 
+    // ─── Simple camera preservation: keep user's current view angle ───
+    // Camera angle is independent of panorama/video rotations
+    const currentCameraYaw = cameraYawRef.current; // in radians
+
+    console.log("=== NAVIGATION ===");
+    console.log(
+      "Camera Yaw (preserved):",
+      ((currentCameraYaw * 180) / Math.PI).toFixed(2) + "°",
+    );
+    console.log("Video Yaw Offset:", videoYawOffset + "°");
+    console.log("==================");
+
     if (resolvedUrl) {
-      // Separate user drag from the video's configured angle, then combine:
-      //   nodeBaseEulerYDeg = the euler.y angle the camera mounted at for this node
-      //   userDragDeltaDeg  = how much the user has dragged FROM that base (0 if no drag)
-      //   combinedEulerYDeg = -(videoInitialYawOffset) + userDragDeltaDeg
-      //
-      // Example: videoInitialYawOffset=270, no drag → combined = -270° (euler.y) = 270° right
-      const nodeBaseEulerYDeg =
-        entryYaw !== null ? entryYaw : -(activeNode.initialYawOffset || 0);
-      const userDragDeltaDeg =
-        lastYawRef.current * (180 / Math.PI) - nodeBaseEulerYDeg;
-      const combinedEulerYDeg = -effectiveYawOffset + userDragDeltaDeg;
-      setVideoYawOverride(combinedEulerYDeg);
-      setEntryYaw(combinedEulerYDeg);
+      // Video transition: preserve camera, rotate video sphere
+      setPreservedCameraYaw(currentCameraYaw);
+      setVideoTextureYawOffset(videoYawOffset);
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
-      // No video — use cross-fade transition via SphereViewer
-      setEntryYaw(lastYawRef.current * (180 / Math.PI));
-      setVideoYawOverride(null); // clear any stale video-yaw so it doesn't override entryYaw on remount
+      // No video: cross-fade transition, preserve camera
+      setPreservedCameraYaw(currentCameraYaw);
+      setVideoTextureYawOffset(null);
       cancelTransition();
-      // SphereViewer will handle the cross-fade automatically
       setActiveNodeId(targetNodeId);
     }
   };
@@ -121,18 +117,18 @@ export default function TourPage() {
   // ─── Sidebar quick-jump (no transition video) ─────────────────────────────
   const handleSidebarNavigate = async (targetNodeId) => {
     if (targetNodeId === activeNodeId || !project) return;
-    cancelTransition(); // stop any playing transition video
-    setVideoYawOverride(null); // clear stale video-yaw so new node starts at its own initialYawOffset
-    setEntryYaw(null); // reset to let the target node use its own initialYawOffset
+    cancelTransition();
+    // Reset camera to 0,0 for sidebar navigation (fresh start)
+    setPreservedCameraYaw(0);
+    setVideoTextureYawOffset(null);
     const targetNode = project.nodes?.[targetNodeId];
     await preloadNextAssets(targetNode, null);
     setActiveNodeId(targetNodeId);
   };
 
-  // ─── Transition complete: fade overlay → switch node → fade out ──────────────────
+  // ─── Transition complete: video ended, clean up ──────────────────────────────
   const handleTransitionComplete = () => {
-    // Video ended - panorama will cross-fade automatically in SphereViewer
-    setVideoYawOverride(null);
+    setVideoTextureYawOffset(null);
     onTransitionComplete();
   };
 
@@ -167,15 +163,15 @@ export default function TourPage() {
         hotspotVisible={hotspotVisible}
         onNavigate={handleNavigate}
         onSignClick={(content) => setActivePopup(content)}
-        initialYaw={entryYaw}
+        preservedCameraYaw={preservedCameraYaw}
         onYawChange={(yawRad) => {
-          lastYawRef.current = yawRad;
+          cameraYawRef.current = yawRad;
         }}
         transitionVideoUrl={
           isTransitioning && transition ? transition.videoUrl : null
         }
         onTransitionComplete={handleTransitionComplete}
-        videoYawOverride={videoYawOverride}
+        videoTextureYawOffset={videoTextureYawOffset}
       />
 
       {/* ── Navigation Sidebar ── */}
