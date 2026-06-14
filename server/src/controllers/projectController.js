@@ -1,5 +1,25 @@
 import { v4 as uuidv4 } from "uuid";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import Project from "../models/Project.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const UPLOADS_ROOT = path.join(__dirname, '../../uploads');
+
+const deleteUploadByUrl = (url) => {
+  try {
+    if (!url || typeof url !== 'string') return;
+    // Expect public urls like '/uploads/panoramas/xyz.jpg'
+    if (!url.startsWith('/uploads/')) return;
+    const rel = url.replace(/^\/uploads\//, '');
+    const filePath = path.join(UPLOADS_ROOT, rel);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (err) {
+    console.error('Failed to delete file for url', url, err.message);
+  }
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const nodeId = () => `node_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
@@ -78,11 +98,38 @@ export const updateProject = async (req, res) => {
 // DELETE /api/projects/:id
 export const deleteProject = async (req, res) => {
   try {
-    const project = await Project.findOneAndDelete({
+    const project = await Project.findOne({
       _id: req.params.id,
       createdBy: req.user._id,
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
+
+    // Collect all uploaded URLs referenced by this project
+    const urls = new Set();
+
+    project.nodes.forEach((node) => {
+      if (!node) return;
+      if (node.panoramaUrl) urls.add(node.panoramaUrl);
+      (node.navigationHotspots || []).forEach((hs) => {
+        if (hs.transitionVideoUrl) urls.add(hs.transitionVideoUrl);
+        if (hs.reverseTransitionVideoUrl) urls.add(hs.reverseTransitionVideoUrl);
+      });
+      (node.infoSigns || []).forEach((s) => {
+        if (s?.popupContent?.coverImage) urls.add(s.popupContent.coverImage);
+      });
+    });
+
+    project.transitions.forEach((t) => {
+      if (!t) return;
+      if (t.videoUrl) urls.add(t.videoUrl);
+      if (t.reverseVideoUrl) urls.add(t.reverseVideoUrl);
+    });
+
+    // Delete files from disk
+    urls.forEach((u) => deleteUploadByUrl(u));
+
+    // Finally remove the project document
+    await Project.findOneAndDelete({ _id: req.params.id, createdBy: req.user._id });
     res.json({ message: "Project deleted" });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -157,7 +204,12 @@ export const updateNode = async (req, res) => {
         parseFloat(updateData.initialYawOffset) || 0;
     }
 
-    // 2. Merge the plain 'existing' object with the new 'updateData'
+    // 2. Remove any replaced uploads (panorama)
+    if (updateData.panoramaUrl && existing.panoramaUrl && updateData.panoramaUrl !== existing.panoramaUrl) {
+      deleteUploadByUrl(existing.panoramaUrl);
+    }
+
+    // 3. Merge the plain 'existing' object with the new 'updateData'
     project.nodes.set(nodeId, { ...existing, ...updateData, id: nodeId });
 
     // Required for Mongoose to detect Map changes
@@ -182,6 +234,28 @@ export const deleteNode = async (req, res) => {
     const { nodeId } = req.params;
     if (!project.nodes.has(nodeId))
       return res.status(404).json({ message: "Node not found" });
+
+    // Before deleting node, collect and remove its uploads
+    const node = project.nodes.get(nodeId);
+    if (node) {
+      if (node.panoramaUrl) deleteUploadByUrl(node.panoramaUrl);
+      (node.navigationHotspots || []).forEach((hs) => {
+        if (hs.transitionVideoUrl) deleteUploadByUrl(hs.transitionVideoUrl);
+        if (hs.reverseTransitionVideoUrl) deleteUploadByUrl(hs.reverseTransitionVideoUrl);
+
+        // Also remove any shared transition record referenced by this hotspot
+        if (hs.transitionId && project.transitions.has(hs.transitionId)) {
+          const tr = project.transitions.get(hs.transitionId);
+          if (tr?.videoUrl) deleteUploadByUrl(tr.videoUrl);
+          if (tr?.reverseVideoUrl) deleteUploadByUrl(tr.reverseVideoUrl);
+          project.transitions.delete(hs.transitionId);
+        }
+      });
+      (node.infoSigns || []).forEach((s) => {
+        if (s?.popupContent?.coverImage) deleteUploadByUrl(s.popupContent.coverImage);
+      });
+      project.markModified('transitions');
+    }
 
     project.nodes.delete(nodeId);
     if (project.settings.initialNodeId === nodeId) {
@@ -249,6 +323,24 @@ export const updateHotspot = async (req, res) => {
     // Separate transition data from hotspot fields
     const { _transitionData, ...hotspotBody } = req.body;
 
+    const existingHotspot = node.navigationHotspots[idx];
+
+    // If hotspot is replacing an uploaded video, remove the old file
+    if (
+      hotspotBody.transitionVideoUrl &&
+      existingHotspot.transitionVideoUrl &&
+      hotspotBody.transitionVideoUrl !== existingHotspot.transitionVideoUrl
+    ) {
+      deleteUploadByUrl(existingHotspot.transitionVideoUrl);
+    }
+    if (
+      hotspotBody.reverseTransitionVideoUrl &&
+      existingHotspot.reverseTransitionVideoUrl &&
+      hotspotBody.reverseTransitionVideoUrl !== existingHotspot.reverseTransitionVideoUrl
+    ) {
+      deleteUploadByUrl(existingHotspot.reverseTransitionVideoUrl);
+    }
+
     node.navigationHotspots[idx] = {
       ...node.navigationHotspots[idx],
       ...hotspotBody,
@@ -258,6 +350,24 @@ export const updateHotspot = async (req, res) => {
 
     // Save transition atomically in the same save() call
     if (_transitionData && _transitionData.id && _transitionData.videoUrl) {
+      // If replacing an existing transition video, delete the old file
+      const existingTransition = project.transitions.get(_transitionData.id);
+      if (
+        existingTransition &&
+        existingTransition.videoUrl &&
+        existingTransition.videoUrl !== _transitionData.videoUrl
+      ) {
+        deleteUploadByUrl(existingTransition.videoUrl);
+      }
+      if (
+        existingTransition &&
+        existingTransition.reverseVideoUrl &&
+        _transitionData.reverseVideoUrl &&
+        existingTransition.reverseVideoUrl !== _transitionData.reverseVideoUrl
+      ) {
+        deleteUploadByUrl(existingTransition.reverseVideoUrl);
+      }
+
       project.transitions.set(_transitionData.id, _transitionData);
     }
 
@@ -332,6 +442,13 @@ export const updateSign = async (req, res) => {
 
     const idx = node.infoSigns.findIndex((s) => s.id === signId);
     if (idx === -1) return res.status(404).json({ message: "Sign not found" });
+
+    // If updating popup cover image, delete the previous uploaded file
+    const existingSign = node.infoSigns[idx];
+    const newCover = req.body?.popupContent?.coverImage;
+    if (newCover && existingSign?.popupContent?.coverImage && newCover !== existingSign.popupContent.coverImage) {
+      deleteUploadByUrl(existingSign.popupContent.coverImage);
+    }
 
     node.infoSigns[idx] = { ...node.infoSigns[idx], ...req.body, id: signId };
     project.nodes.set(nodeId, node);

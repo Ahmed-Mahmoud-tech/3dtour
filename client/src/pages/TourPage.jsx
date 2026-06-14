@@ -22,6 +22,9 @@ export default function TourPage() {
   // ─── Video texture yaw for rotation ─────────────────────────────────────────
   const [videoTextureYawOffset, setVideoTextureYawOffset] = useState(null);
 
+  // ─── Active video URL (managed separately to control video lifecycle) ──────
+  const [activeVideoUrl, setActiveVideoUrl] = useState(null);
+
   // ─── Black fade overlay (no-video navigation + video-end transition) ──────
   const [fadeOverlay, setFadeOverlay] = useState(false);
   const {
@@ -113,11 +116,13 @@ export default function TourPage() {
       // Video transition: preserve camera, rotate video sphere
       setPreservedCameraYaw(currentCameraYaw);
       setVideoTextureYawOffset(videoYawOffset);
+      setActiveVideoUrl(resolvedUrl);
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
       setVideoTextureYawOffset(null);
+      setActiveVideoUrl(null);
       cancelTransition();
       setActiveNodeId(targetNodeId);
     }
@@ -130,6 +135,7 @@ export default function TourPage() {
     // Reset camera to 0,0 for sidebar navigation (fresh start)
     setPreservedCameraYaw(0);
     setVideoTextureYawOffset(null);
+    setActiveVideoUrl(null);
     const targetNode = project.nodes?.[targetNodeId];
     await preloadNextAssets(targetNode, null);
     setActiveNodeId(targetNodeId);
@@ -140,15 +146,21 @@ export default function TourPage() {
     // IMPORTANT: Update preserved camera to CURRENT position (includes any dragging during video)
     const currentCameraAfterVideo = cameraYawRef.current;
     setPreservedCameraYaw(currentCameraAfterVideo);
-    setVideoTextureYawOffset(null);
 
     console.log(
-      "🎬 VIDEO ENDED - Camera position updated:",
+      "🎬 VIDEO FADE STARTED - Switching to new node, Camera position:",
       ((currentCameraAfterVideo * 180) / Math.PI).toFixed(2) +
         "° (includes any dragging during video)",
     );
 
     onTransitionComplete();
+  };
+
+  // ─── Video fade complete: cleanup transition state ───────────────────────────
+  const handleVideoFadeComplete = () => {
+    setVideoTextureYawOffset(null);
+    setActiveVideoUrl(null);
+    console.log("🎬 VIDEO FADE COMPLETE - Cleaning up video");
   };
 
   if (loading) {
@@ -186,10 +198,9 @@ export default function TourPage() {
         onYawChange={(yawRad) => {
           cameraYawRef.current = yawRad;
         }}
-        transitionVideoUrl={
-          isTransitioning && transition ? transition.videoUrl : null
-        }
+        transitionVideoUrl={activeVideoUrl}
         onTransitionComplete={handleTransitionComplete}
+        onVideoFadeComplete={handleVideoFadeComplete}
         videoTextureYawOffset={videoTextureYawOffset}
       />
 
