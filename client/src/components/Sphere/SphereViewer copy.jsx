@@ -29,15 +29,15 @@ function PanoramaSphere({
     onFadeCompleteRef.current = onFadeComplete;
   });
 
-  // Smooth fade animation - 0.5 second transition
+  // Smooth fade animation - 1 second transition
   useFrame(() => {
     if (matRef.current) {
       const target = opacity;
       const current = opacityRef.current;
       if (Math.abs(current - target) > 0.001) {
-        // Smooth fade: ~0.5 second at 60fps using lerp factor 0.08
-        // opacityRef.current += (target - current) * 0.08;
-        // matRef.current.opacity = opacityRef.current;
+        // Smooth fade: ~1 second at 60fps using lerp factor 0.04
+        opacityRef.current += (target - current) * 0.04;
+        matRef.current.opacity = opacityRef.current;
       } else if (current !== target) {
         opacityRef.current = target;
         matRef.current.opacity = target;
@@ -80,13 +80,9 @@ function PanoramaSphere({
   );
 
   // Render a transparent sphere for cross-fade effect
-  // During fade-in, use smaller radius to render in front of the previous panorama
-  const isFadingIn = opacity > opacityRef.current && opacityRef.current < 0.95;
-  const radius = isFadingIn ? SPHERE_RADIUS - 0.02 : SPHERE_RADIUS;
-
   return (
     <mesh ref={meshRef} rotation={[0, rotationY, 0]}>
-      <sphereGeometry args={[radius, 128, 64]} />
+      <sphereGeometry args={[SPHERE_RADIUS, 128, 64]} />
       <meshBasicMaterial
         ref={matRef}
         map={texture}
@@ -247,25 +243,25 @@ function VideoSphere({
     if (texture) texture.needsUpdate = true;
     if (matRef.current) {
       if (fadingOutRef.current) {
-        // Fade out smoothly: ~0.5 second at 60 fps
+        // Fade out smoothly: ~1 second at 60 fps
         // Call onEnded when fade STARTS to switch nodes
         if (!onEndedCalledRef.current) {
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
-        // // Continue fading out
-        // if (!fadeCompleteCalledRef.current) {
-        //   opacityRef.current = Math.max(0, opacityRef.current - 0.033);
-        //   matRef.current.opacity = opacityRef.current;
-        //   if (opacityRef.current <= 0) {
-        //     fadeCompleteCalledRef.current = true;
-        //     // Call onFadeComplete when fade is DONE to cleanup
-        //     onFadeCompleteRef.current?.();
-        //   }
-        // }
+        // Continue fading out
+        if (!fadeCompleteCalledRef.current) {
+          opacityRef.current = Math.max(0, opacityRef.current - 0.0167);
+          matRef.current.opacity = opacityRef.current;
+          if (opacityRef.current <= 0) {
+            fadeCompleteCalledRef.current = true;
+            // Call onFadeComplete when fade is DONE to cleanup
+            onFadeCompleteRef.current?.();
+          }
+        }
       } else if (opacityRef.current < 1) {
-        // Fade in smoothly: ~0.5 second to fully opaque at 60 fps
-        opacityRef.current = Math.min(1, opacityRef.current + 0.06);
+        // Fade in smoothly: ~1 second to fully opaque at 60 fps
+        opacityRef.current = Math.min(1, opacityRef.current + 0.0167);
         matRef.current.opacity = opacityRef.current;
       }
     }
@@ -384,23 +380,23 @@ function Scene({
         onYawChange={onYawChange}
       />
 
-      {/* Previous panorama - stays at full opacity, renders as mesh (not background) */}
+      {/* Previous panorama fading out - rotated by its yawOffset */}
       {previousNode && previousPanoramaOpacity > 0 && (
         <PanoramaSphere
           panoramaUrl={previousNode.panoramaUrl}
           opacity={previousPanoramaOpacity}
           onFadeComplete={onPreviousFadeComplete}
           yawOffset={previousNode.initialYawOffset || 0}
-          useBackground={false}
+          useBackground={!transitionVideoUrl}
         />
       )}
 
-      {/* Current panorama - fades in on top as mesh during transition */}
+      {/* Current panorama - rotated by its yawOffset to align with world direction */}
       <PanoramaSphere
         panoramaUrl={node.panoramaUrl}
         opacity={panoramaOpacity}
         yawOffset={node.initialYawOffset || 0}
-        useBackground={!transitionVideoUrl && !previousNode}
+        useBackground={!transitionVideoUrl}
       />
 
       {/* Video sphere - rotated by video's yawOffset */}
@@ -457,7 +453,6 @@ export default function SphereViewer({
   const [previousNode, setPreviousNode] = useState(null);
   const [panoramaOpacity, setPanoramaOpacity] = useState(1);
   const [previousPanoramaOpacity, setPreviousPanoramaOpacity] = useState(0);
-  const fadeOutTimeoutRef = useRef(null);
   const nodeIdRef = useRef(node?.id);
   const nodeDataRef = useRef({
     panoramaUrl: node?.panoramaUrl,
@@ -486,7 +481,6 @@ export default function SphereViewer({
         panoramaUrl: nodeDataRef.current.panoramaUrl,
         initialYawOffset: nodeDataRef.current.initialYawOffset,
       });
-      // Keep old panorama at full opacity (no fade out needed)
       setPreviousPanoramaOpacity(1);
       setPanoramaOpacity(0);
       nodeIdRef.current = node.id;
@@ -495,20 +489,11 @@ export default function SphereViewer({
         initialYawOffset: node.initialYawOffset,
       };
 
-      // Clear any pending fade-out timeout
-      if (fadeOutTimeoutRef.current) {
-        clearTimeout(fadeOutTimeoutRef.current);
-      }
-
-      // Start fading in the new panorama immediately (it will render in front)
+      // Start cross-fade
       requestAnimationFrame(() => {
+        setPreviousPanoramaOpacity(0);
         setPanoramaOpacity(1);
       });
-
-      // Remove old panorama after new one is fully visible (600ms)
-      fadeOutTimeoutRef.current = setTimeout(() => {
-        setPreviousNode(null);
-      }, 600);
     } else if (node && !previousNode) {
       // First load
       nodeIdRef.current = node?.id;
@@ -521,17 +506,7 @@ export default function SphereViewer({
   }, [node?.id]);
 
   const handlePreviousFadeComplete = useCallback(() => {
-    // This callback is no longer needed since we remove the node directly
-    // but kept for compatibility
-  }, []);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (fadeOutTimeoutRef.current) {
-        clearTimeout(fadeOutTimeoutRef.current);
-      }
-    };
+    setPreviousNode(null);
   }, []);
 
   if (!node) return null;

@@ -36,8 +36,8 @@ function PanoramaSphere({
       const current = opacityRef.current;
       if (Math.abs(current - target) > 0.001) {
         // Smooth fade: ~0.5 second at 60fps using lerp factor 0.08
-        // opacityRef.current += (target - current) * 0.08;
-        // matRef.current.opacity = opacityRef.current;
+        opacityRef.current += (target - current) * 0.08;
+        matRef.current.opacity = opacityRef.current;
       } else if (current !== target) {
         opacityRef.current = target;
         matRef.current.opacity = target;
@@ -253,19 +253,19 @@ function VideoSphere({
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
-        // // Continue fading out
-        // if (!fadeCompleteCalledRef.current) {
-        //   opacityRef.current = Math.max(0, opacityRef.current - 0.033);
-        //   matRef.current.opacity = opacityRef.current;
-        //   if (opacityRef.current <= 0) {
-        //     fadeCompleteCalledRef.current = true;
-        //     // Call onFadeComplete when fade is DONE to cleanup
-        //     onFadeCompleteRef.current?.();
-        //   }
-        // }
+        // Continue fading out
+        if (!fadeCompleteCalledRef.current) {
+          opacityRef.current = Math.max(0, opacityRef.current - 0.033);
+          matRef.current.opacity = opacityRef.current;
+          if (opacityRef.current <= 0) {
+            fadeCompleteCalledRef.current = true;
+            // Call onFadeComplete when fade is DONE to cleanup
+            onFadeCompleteRef.current?.();
+          }
+        }
       } else if (opacityRef.current < 1) {
         // Fade in smoothly: ~0.5 second to fully opaque at 60 fps
-        opacityRef.current = Math.min(1, opacityRef.current + 0.06);
+        opacityRef.current = Math.min(1, opacityRef.current + 0.033);
         matRef.current.opacity = opacityRef.current;
       }
     }
