@@ -15,9 +15,11 @@ export default function TourPage() {
   // ─── Info popup state (rendered outside Canvas) ───────────────────────────
   const [activePopup, setActivePopup] = useState(null); // popupContent object
 
-  // ─── Camera yaw preservation across navigation ──────────────────────────────
+  // ─── Camera yaw and pitch preservation across navigation ──────────────────────────────
   const cameraYawRef = useRef(0); // in radians, updated on every drag
+  const cameraPitchRef = useRef(0); // in radians, updated on every drag
   const [preservedCameraYaw, setPreservedCameraYaw] = useState(null); // radians - preserves user's view
+  const [preservedCameraPitch, setPreservedCameraPitch] = useState(null); // radians - preserves vertical scroll
 
   // ─── Video texture yaw for rotation ─────────────────────────────────────────
   const [videoTextureYawOffset, setVideoTextureYawOffset] = useState(null);
@@ -115,12 +117,14 @@ export default function TourPage() {
     if (resolvedUrl) {
       // Video transition: preserve camera, rotate video sphere
       setPreservedCameraYaw(currentCameraYaw);
+      setPreservedCameraPitch(cameraPitchRef.current);
       setVideoTextureYawOffset(videoYawOffset);
       setActiveVideoUrl(resolvedUrl);
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
+      setPreservedCameraPitch(cameraPitchRef.current);
       setVideoTextureYawOffset(null);
       setActiveVideoUrl(null);
       cancelTransition();
@@ -134,6 +138,7 @@ export default function TourPage() {
     cancelTransition();
     // Reset camera to 0,0 for sidebar navigation (fresh start)
     setPreservedCameraYaw(0);
+    setPreservedCameraPitch(0);
     setVideoTextureYawOffset(null);
     setActiveVideoUrl(null);
     const targetNode = project.nodes?.[targetNodeId];
@@ -145,12 +150,16 @@ export default function TourPage() {
   const handleTransitionComplete = () => {
     // IMPORTANT: Update preserved camera to CURRENT position (includes any dragging during video)
     const currentCameraAfterVideo = cameraYawRef.current;
+    const currentPitchAfterVideo = cameraPitchRef.current;
     setPreservedCameraYaw(currentCameraAfterVideo);
+    setPreservedCameraPitch(currentPitchAfterVideo);
 
     console.log(
       "🎬 VIDEO FADE STARTED - Switching to new node, Camera position:",
       ((currentCameraAfterVideo * 180) / Math.PI).toFixed(2) +
-        "° (includes any dragging during video)",
+        "° yaw, " +
+        ((currentPitchAfterVideo * 180) / Math.PI).toFixed(2) +
+        "° pitch (includes any dragging during video)",
     );
 
     onTransitionComplete();
@@ -195,8 +204,12 @@ export default function TourPage() {
         onNavigate={handleNavigate}
         onSignClick={(content) => setActivePopup(content)}
         preservedCameraYaw={preservedCameraYaw}
+        preservedCameraPitch={preservedCameraPitch}
         onYawChange={(yawRad) => {
           cameraYawRef.current = yawRad;
+        }}
+        onPitchChange={(pitchRad) => {
+          cameraPitchRef.current = pitchRad;
         }}
         transitionVideoUrl={activeVideoUrl}
         onTransitionComplete={handleTransitionComplete}
