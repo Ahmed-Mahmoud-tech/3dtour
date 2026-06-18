@@ -278,16 +278,16 @@ function VideoSphere({
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
-        // // Continue fading out
-        // if (!fadeCompleteCalledRef.current) {
-        //   opacityRef.current = Math.max(0, opacityRef.current - 0.03);
-        //   matRef.current.opacity = opacityRef.current;
-        //   if (opacityRef.current <= 0) {
-        //     fadeCompleteCalledRef.current = true;
-        //     // Call onFadeComplete when fade is DONE to cleanup
-        //     onFadeCompleteRef.current?.();
-        //   }
-        // }
+        // Continue fading out
+        if (!fadeCompleteCalledRef.current) {
+          opacityRef.current = Math.max(0, opacityRef.current - 0.03);
+          matRef.current.opacity = opacityRef.current;
+          if (opacityRef.current <= 0) {
+            fadeCompleteCalledRef.current = true;
+            // Call onFadeComplete when fade is DONE to cleanup
+            onFadeCompleteRef.current?.();
+          }
+        }
       } else if (opacityRef.current < 1) {
         // Fade in smoothly: ~0.5 second to fully opaque at 60 fps
         opacityRef.current = Math.min(1, opacityRef.current + 0.05);
@@ -426,7 +426,6 @@ function Scene({
 
       {/* Current panorama - fades in on top as mesh during transition */}
       <PanoramaSphere
-        key={node.id}
         panoramaUrl={node.panoramaUrl}
         opacity={panoramaOpacity}
         yawOffset={node.initialYawOffset || 0}
