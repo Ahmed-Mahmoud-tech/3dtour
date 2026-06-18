@@ -120,9 +120,7 @@ export default function TourPage() {
       setPreservedCameraPitch(cameraPitchRef.current);
       setVideoTextureYawOffset(videoYawOffset);
       setActiveVideoUrl(resolvedUrl);
-      setTimeout(() => {
-        navigateTo(targetNodeId, resolvedUrl, playMode);
-      }, 250);
+      navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
@@ -157,7 +155,7 @@ export default function TourPage() {
     setPreservedCameraPitch(currentPitchAfterVideo);
 
     console.log(
-      "🎬 VIDEO FADE STARTED - Node already changed when video started. Camera position:",
+      "🎬 VIDEO FADE STARTED - Switching to new node, Camera position:",
       ((currentCameraAfterVideo * 180) / Math.PI).toFixed(2) +
         "° yaw, " +
         ((currentPitchAfterVideo * 180) / Math.PI).toFixed(2) +

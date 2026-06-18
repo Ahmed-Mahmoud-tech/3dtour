@@ -99,8 +99,6 @@ export function useTour(projectId) {
       if (targetNodeId === activeNodeId) return;
 
       if (videoUrl) {
-        // Change node immediately so new panorama loads underneath video
-        setActiveNodeId(targetNodeId);
         // Overwrite any existing transition — VideoSphere will restart with the new URL
         setTransition({ videoUrl, playMode, targetNodeId });
         setIsTransitioning(true);
@@ -125,7 +123,7 @@ export function useTour(projectId) {
   /** Called by VideoSphere when video finishes */
   const onTransitionComplete = useCallback(() => {
     if (!transition) return;
-    // Node was already changed when video started, just cleanup transition state
+    setActiveNodeId(transition.targetNodeId);
     setTransition(null);
     setIsTransitioning(false);
     setHotspotVisible(true);

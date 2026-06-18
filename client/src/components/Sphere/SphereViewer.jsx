@@ -278,19 +278,19 @@ function VideoSphere({
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
-        // // Continue fading out
-        // if (!fadeCompleteCalledRef.current) {
-        //   opacityRef.current = Math.max(0, opacityRef.current - 0.033);
-        //   matRef.current.opacity = opacityRef.current;
-        //   if (opacityRef.current <= 0) {
-        //     fadeCompleteCalledRef.current = true;
-        //     // Call onFadeComplete when fade is DONE to cleanup
-        //     onFadeCompleteRef.current?.();
-        //   }
-        // }
+        // Continue fading out
+        if (!fadeCompleteCalledRef.current) {
+          opacityRef.current = Math.max(0, opacityRef.current - 0.03);
+          matRef.current.opacity = opacityRef.current;
+          if (opacityRef.current <= 0) {
+            fadeCompleteCalledRef.current = true;
+            // Call onFadeComplete when fade is DONE to cleanup
+            onFadeCompleteRef.current?.();
+          }
+        }
       } else if (opacityRef.current < 1) {
         // Fade in smoothly: ~0.5 second to fully opaque at 60 fps
-        opacityRef.current = Math.min(1, opacityRef.current + 0.04);
+        opacityRef.current = Math.min(1, opacityRef.current + 0.05);
         matRef.current.opacity = opacityRef.current;
       }
     }
@@ -494,10 +494,14 @@ export default function SphereViewer({
     panoramaUrl: node?.panoramaUrl,
     initialYawOffset: node?.initialYawOffset,
   });
+  const prevVideoUrlRef = useRef(transitionVideoUrl);
 
-  // Fade out current panorama when video transition starts
+  // Handle video transitions: hide panoramas when video starts, show when video ends
   useEffect(() => {
-    if (transitionVideoUrl) {
+    const hadVideo = prevVideoUrlRef.current;
+    const hasVideo = transitionVideoUrl;
+
+    if (hasVideo) {
       // Video is starting, fade out ALL panoramas (current and previous)
       setPanoramaOpacity(0);
       setPreviousPanoramaOpacity(0);
@@ -505,7 +509,12 @@ export default function SphereViewer({
       if (previousNode) {
         setPreviousNode(null);
       }
+    } else if (hadVideo && !hasVideo) {
+      // Video just finished, fade in the current panorama
+      setPanoramaOpacity(1);
     }
+
+    prevVideoUrlRef.current = transitionVideoUrl;
   }, [transitionVideoUrl]);
 
   // Detect node change and trigger cross-fade
