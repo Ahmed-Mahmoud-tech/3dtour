@@ -124,6 +124,9 @@ export default function TourPage() {
         navigateTo(targetNodeId, resolvedUrl, playMode);
       }, 250);
     } else {
+      console.log(
+        "🚀 No video transition: cross-fade to target node, preserving camera",
+      );
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
       setPreservedCameraPitch(cameraPitchRef.current);

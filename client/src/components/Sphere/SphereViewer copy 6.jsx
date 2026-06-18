@@ -29,14 +29,14 @@ function PanoramaSphere({
     onFadeCompleteRef.current = onFadeComplete;
   });
 
-  // Smooth fade animation - ~1 second transition
+  // Smooth fade animation - 0.5 second transition
   useFrame(() => {
     if (matRef.current) {
       const target = opacity;
       const current = opacityRef.current;
       if (Math.abs(current - target) > 0.001) {
-        // Smooth fade: ~1 second at 60fps using lerp factor 0.05 for slower, smoother transition
-        opacityRef.current += (target - current) * 0.05;
+        // Smooth fade: ~0.5 second at 60fps using lerp factor 0.08
+        opacityRef.current += (target - current) * 0.08;
         matRef.current.opacity = opacityRef.current;
       } else if (current !== target) {
         opacityRef.current = target;
@@ -521,7 +521,7 @@ export default function SphereViewer({
   useEffect(() => {
     if (node && nodeIdRef.current !== node.id) {
       const hasVideo = transitionVideoUrl;
-
+      
       // Only set up cross-fade if there's NO video transition
       if (!hasVideo) {
         // Store previous node data including yawOffset for proper rotation during fade
@@ -534,7 +534,7 @@ export default function SphereViewer({
         setPreviousPanoramaOpacity(1);
         setPanoramaOpacity(0);
       }
-
+      
       nodeIdRef.current = node.id;
       nodeDataRef.current = {
         panoramaUrl: node.panoramaUrl,
