@@ -398,7 +398,6 @@ function VideoSphere({
 function Scene({
   node,
   previousNode,
-  targetNodeForVideo,
   hotspotVisible,
   onNavigate,
   onSignClick,
@@ -425,7 +424,7 @@ function Scene({
       />
 
       {/* Previous panorama - stays at full opacity, renders as mesh (not background) */}
-      {/* {previousNode && previousPanoramaOpacity > 0 && (
+      {previousNode && previousPanoramaOpacity > 0 && (
         <PanoramaSphere
           panoramaUrl={previousNode.panoramaUrl}
           opacity={previousPanoramaOpacity}
@@ -433,18 +432,7 @@ function Scene({
           yawOffset={previousNode.initialYawOffset || 0}
           useBackground={false}
         />
-      )} */}
-
-      {/* Target node panorama - rendered behind the video during transition */}
-      {/* {targetNodeForVideo && transitionVideoUrl && (
-        <PanoramaSphere
-          key={`target-${targetNodeForVideo.id}`}
-          panoramaUrl={targetNodeForVideo.panoramaUrl}
-          opacity={1}
-          yawOffset={targetNodeForVideo.initialYawOffset || 0}
-          useBackground={false}
-        />
-      )} */}
+      )}
 
       {/* Current panorama - fades in on top as mesh during transition */}
       <PanoramaSphere
@@ -496,7 +484,6 @@ function Scene({
  */
 export default function SphereViewer({
   node,
-  targetNodeForVideo,
   hotspotVisible,
   onNavigate,
   onSignClick,
@@ -520,13 +507,13 @@ export default function SphereViewer({
   });
   const prevVideoUrlRef = useRef(transitionVideoUrl);
 
-  // Handle video transitions: hide current panorama when video starts
+  // Handle video transitions: hide panoramas when video starts, show when video ends
   useEffect(() => {
     const hadVideo = prevVideoUrlRef.current;
     const hasVideo = transitionVideoUrl;
 
     if (hasVideo) {
-      // Video is starting, hide current panorama (target node is shown behind video)
+      // Video is starting, fade out ALL panoramas (current and previous)
       setPanoramaOpacity(0);
       setPreviousPanoramaOpacity(0);
       // Clean up previous node since we're transitioning
@@ -534,7 +521,7 @@ export default function SphereViewer({
         setPreviousNode(null);
       }
     } else if (hadVideo && !hasVideo) {
-      // Video just finished - target node is now the active node, show it
+      // Video just finished, fade in the current panorama
       setPanoramaOpacity(1);
     }
 
@@ -626,7 +613,6 @@ export default function SphereViewer({
       <Scene
         node={node}
         previousNode={previousNode}
-        targetNodeForVideo={targetNodeForVideo}
         hotspotVisible={hotspotVisible}
         onNavigate={onNavigate}
         onSignClick={onSignClick}

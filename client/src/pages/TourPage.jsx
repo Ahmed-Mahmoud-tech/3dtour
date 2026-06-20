@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useTour } from "../hooks/useTour.js";
 import { usePreloader } from "../hooks/usePreloader.js";
@@ -45,6 +45,12 @@ export default function TourPage() {
     onTransitionComplete,
     setActiveNodeId,
   } = useTour(projectId);
+
+  // ─── Compute target node for video transition (to show behind the video) ──
+  const targetNodeForVideo = useMemo(() => {
+    if (!transition?.targetNodeId || !project?.nodes) return null;
+    return project.nodes[transition.targetNodeId] || null;
+  }, [transition?.targetNodeId, project?.nodes]);
 
   // ─── Preload next assets when hovering / navigating ──────────────────────
   const handleNavigate = async (
@@ -203,6 +209,7 @@ export default function TourPage() {
       {/* ── 3D Sphere Viewer ── */}
       <SphereViewer
         node={activeNode}
+        targetNodeForVideo={targetNodeForVideo} // Pass target node to show behind video
         hotspotVisible={hotspotVisible}
         onNavigate={handleNavigate}
         onSignClick={(content) => setActivePopup(content)}
