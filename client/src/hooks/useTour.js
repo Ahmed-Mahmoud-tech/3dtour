@@ -97,22 +97,25 @@ export function useTour(projectId) {
     (targetNodeId, videoUrl, playMode = "forward") => {
       if (!project) return;
       if (targetNodeId === activeNodeId) return;
-
       if (videoUrl) {
+        console.log("2222");
         // Change node immediately so new panorama loads underneath video
-        setActiveNodeId(targetNodeId);
+        // setTimeout(() => {
+        // setActiveNodeId(targetNodeId);
+        // }, 600);
         // Overwrite any existing transition — VideoSphere will restart with the new URL
         setTransition({ videoUrl, playMode, targetNodeId });
         setIsTransitioning(true);
         setHotspotVisible(false); // hide hotspots/signs while video plays
       } else {
+        console.log("5555");
         // No transition video — jump directly (caller handles fade overlay)
         setTransition(null);
         setIsTransitioning(false);
         setActiveNodeId(targetNodeId);
       }
     },
-    [project, activeNodeId],
+    [project],
   );
 
   /** Cancel an in-progress video transition without changing the active node */
@@ -129,6 +132,7 @@ export function useTour(projectId) {
     setTransition(null);
     setIsTransitioning(false);
     setHotspotVisible(true);
+    setActiveNodeId(transition.targetNodeId);
   }, [transition]);
 
   const activeNode = project?.nodes?.[activeNodeId] || null;

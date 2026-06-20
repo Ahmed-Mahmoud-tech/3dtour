@@ -120,9 +120,7 @@ export default function TourPage() {
       setPreservedCameraPitch(cameraPitchRef.current);
       setVideoTextureYawOffset(videoYawOffset);
       setActiveVideoUrl(resolvedUrl);
-      setTimeout(() => {
-        navigateTo(targetNodeId, resolvedUrl, playMode);
-      }, 250);
+      navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
       console.log(
         "🚀 No video transition: cross-fade to target node, preserving camera",
