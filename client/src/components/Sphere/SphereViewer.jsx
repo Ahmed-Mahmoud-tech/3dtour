@@ -546,18 +546,18 @@ export default function SphereViewer({
     if (node && nodeIdRef.current !== node.id) {
       const hasVideo = transitionVideoUrl;
 
-      // Only set up cross-fade if there's NO video transition
-      if (!hasVideo) {
-        // Store previous node data including yawOffset for proper rotation during fade
-        setPreviousNode({
-          id: nodeIdRef.current,
-          panoramaUrl: nodeDataRef.current.panoramaUrl,
-          initialYawOffset: nodeDataRef.current.initialYawOffset,
-        });
-        // Keep old panorama at full opacity (no fade out needed)
-        setPreviousPanoramaOpacity(1);
-        setPanoramaOpacity(0);
-      }
+      // // Only set up cross-fade if there's NO video transition
+      // if (!hasVideo) {
+      //   // Store previous node data including yawOffset for proper rotation during fade
+      //   setPreviousNode({
+      //     id: nodeIdRef.current,
+      //     panoramaUrl: nodeDataRef.current.panoramaUrl,
+      //     initialYawOffset: nodeDataRef.current.initialYawOffset,
+      //   });
+      //   // Keep old panorama at full opacity (no fade out needed)
+      //   setPreviousPanoramaOpacity(1);
+      //   setPanoramaOpacity(0);
+      // }
 
       nodeIdRef.current = node.id;
       nodeDataRef.current = {
