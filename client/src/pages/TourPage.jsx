@@ -26,6 +26,7 @@ export default function TourPage() {
 
   // ─── Active video URL (managed separately to control video lifecycle) ──────
   const [activeVideoUrl, setActiveVideoUrl] = useState(null);
+  const [spotHasVideo, setSpotHasVideo] = useState(false);
 
   // ─── Black fade overlay (no-video navigation + video-end transition) ──────
   const [fadeOverlay, setFadeOverlay] = useState(false);
@@ -126,16 +127,19 @@ export default function TourPage() {
       setPreservedCameraPitch(cameraPitchRef.current);
       setVideoTextureYawOffset(videoYawOffset);
       setActiveVideoUrl(resolvedUrl);
+      setSpotHasVideo(true);
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
       console.log(
-        "🚀 No video transition: cross-fade to target node, preserving camera",
+        "🚀 No video transition: cross-fade to target node, preserving cameraaaaaaaaa",
+        resolvedUrl,
       );
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
       setPreservedCameraPitch(cameraPitchRef.current);
       setVideoTextureYawOffset(null);
       setActiveVideoUrl(null);
+      setSpotHasVideo(false);
       cancelTransition();
       setActiveNodeId(targetNodeId);
     }
@@ -150,6 +154,7 @@ export default function TourPage() {
     setPreservedCameraPitch(0);
     setVideoTextureYawOffset(null);
     setActiveVideoUrl(null);
+    setSpotHasVideo(false);
     const targetNode = project.nodes?.[targetNodeId];
     await preloadNextAssets(targetNode, null);
     setActiveNodeId(targetNodeId);
@@ -225,6 +230,7 @@ export default function TourPage() {
         onTransitionComplete={handleTransitionComplete}
         onVideoFadeComplete={handleVideoFadeComplete}
         videoTextureYawOffset={videoTextureYawOffset}
+        spotHasVideo={spotHasVideo}
       />
 
       {/* ── Navigation Sidebar ── */}
