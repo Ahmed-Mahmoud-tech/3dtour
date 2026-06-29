@@ -63,7 +63,12 @@ function PanoramaSphere({ url, onClick }) {
   return (
     <mesh onClick={onClick}>
       <sphereGeometry args={[SPHERE_RADIUS, 64, 32]} />
-      <meshBasicMaterial transparent opacity={0} side={THREE.BackSide} depthWrite={false} />
+      <meshBasicMaterial
+        transparent
+        opacity={0}
+        side={THREE.BackSide}
+        depthWrite={false}
+      />
     </mesh>
   );
 }
@@ -220,6 +225,20 @@ function StudioScene({
 }) {
   const handleClick = useCallback(
     (e) => {
+      console.log(
+        "panoramaUrl",
+        panoramaUrl,
+        "placementMode",
+        placementMode,
+        "onSphereClick",
+        onSphereClick,
+        "node",
+        node,
+        "previewPin",
+        previewPin,
+        "onEditItem",
+        onEditItem,
+      );
       if (!placementMode) return;
       e.stopPropagation();
       const point = e.point;
@@ -231,7 +250,10 @@ function StudioScene({
 
   return (
     <>
-      <DragControls placementMode={placementMode} initialYawOffset={node?.initialYawOffset || 0} />
+      <DragControls
+        placementMode={placementMode}
+        initialYawOffset={node?.initialYawOffset || 0}
+      />
       <PanoramaSphere url={panoramaUrl} onClick={handleClick} />
       <ExistingPins
         node={node}

@@ -181,8 +181,8 @@ export default function TourPage() {
 
   // ─── Video fade complete: cleanup transition state ───────────────────────────
   const handleVideoFadeComplete = () => {
-    setVideoTextureYawOffset(null);
-    setActiveVideoUrl(null);
+    // setVideoTextureYawOffset(null);
+    // setActiveVideoUrl(null);
     console.log("🎬 VIDEO FADE COMPLETE - Cleaning up video");
   };
 
