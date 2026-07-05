@@ -25,6 +25,7 @@ function PanoramaSphere({
   const matRef = useRef();
   const meshRef = useRef();
   const onFadeCompleteRef = useRef(onFadeComplete);
+  const [textureReady, setTextureReady] = useState(false);
 
   useEffect(() => {
     onFadeCompleteRef.current = onFadeComplete;
@@ -32,7 +33,7 @@ function PanoramaSphere({
 
   // Smooth fade animation - ~1 second transition
   useFrame(() => {
-    if (matRef.current) {
+    if (matRef.current && textureReady) {
       const target = opacity;
       const current = opacityRef.current;
       if (Math.abs(current - target) > 0.001) {
@@ -50,24 +51,40 @@ function PanoramaSphere({
   });
 
   useEffect(() => {
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.repeat.x = -1;
-    texture.offset.x = 1; // fixes seam/cutting caused by negative repeat
-    texture.needsUpdate = true;
+    const loadTexture = async () => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.repeat.x = -1;
+      texture.offset.x = 1; // fixes seam/cutting caused by negative repeat
+      texture.needsUpdate = true;
 
-    // Only set as background if not in transition (no video playing)
-    if (useBackground) {
-      const pmrem = new THREE.PMREMGenerator(gl);
-      const envMap = pmrem.fromEquirectangular(texture).texture;
-      pmrem.dispose();
-      scene.background = envMap;
+      // Wait for texture to be ready (if it has an image source)
+      if (texture.image && texture.image.complete === false) {
+        await new Promise((resolve) => {
+          texture.image.onload = resolve;
+          texture.image.onerror = resolve; // Continue even on error
+        });
+      }
 
-      return () => {
-        scene.background = null;
-        envMap.dispose();
-      };
-    }
+      // Only set as background if not in transition (no video playing)
+      if (useBackground) {
+        const pmrem = new THREE.PMREMGenerator(gl);
+        const envMap = pmrem.fromEquirectangular(texture).texture;
+        pmrem.dispose();
+        scene.background = envMap;
+
+        setTextureReady(true);
+
+        return () => {
+          scene.background = null;
+          envMap.dispose();
+        };
+      } else {
+        setTextureReady(true);
+      }
+    };
+
+    loadTexture();
   }, [texture, gl, scene, useBackground]);
 
   // Rotate sphere mesh by yawOffset to align all panoramas to the same world direction
@@ -79,6 +96,9 @@ function PanoramaSphere({
     "(mesh rotation, independent of camera) -",
     panoramaUrl.split("/").pop(),
   );
+
+  // Don't render until texture is ready
+  if (!textureReady) return null;
 
   // Render a transparent sphere for cross-fade effect
   // During fade-in, use smaller radius to render in front of the previous panorama
@@ -329,35 +349,52 @@ function VideoSphere({
 
     console.log("Video Texture Yaw Offset:", textureYawOffset + "°");
 
+    const handleCanPlay = () => {
+      // Video has enough data to start playing
+      console.log("✅ Video ready to play:", videoUrl.split("/").pop());
+    };
+
     const handlePlaying = () => {
       // Only show sphere once the first frame is actually decoded — no black flash
-      if (mounted) setTexture(tex);
+      if (mounted) {
+        setTexture(tex);
+        console.log("✅ Video playback started:", videoUrl.split("/").pop());
+      }
     };
+
     const handleEnded = () => {
       // Trigger smooth fade-out before notifying parent
       if (mounted) fadingOutRef.current = true;
     };
+
     const handleError = () => {
       if (!mounted) return;
       console.error("Transition video failed:", videoUrl);
       onEndedRef.current?.();
     };
 
+    video.addEventListener("canplay", handleCanPlay, { once: true });
     video.addEventListener("playing", handlePlaying, { once: true });
     video.addEventListener("ended", handleEnded);
     video.addEventListener("error", handleError);
 
     video.src = videoUrl;
-    video.play().catch((err) => {
-      if (!mounted) return;
-      if (err.name !== "AbortError") {
-        console.error("Transition video play rejected:", err);
-        onEndedRef.current?.();
-      }
-    });
+
+    // Try to play with better error handling
+    const playPromise = video.play();
+    if (playPromise) {
+      playPromise.catch((err) => {
+        if (!mounted) return;
+        if (err.name !== "AbortError") {
+          console.error("Transition video play rejected:", err);
+          onEndedRef.current?.();
+        }
+      });
+    }
 
     return () => {
       mounted = false;
+      video.removeEventListener("canplay", handleCanPlay);
       video.removeEventListener("playing", handlePlaying);
       video.removeEventListener("ended", handleEnded);
       video.removeEventListener("error", handleError);

@@ -28,6 +28,9 @@ export default function TourPage() {
   const [activeVideoUrl, setActiveVideoUrl] = useState(null);
   const [spotHasVideo, setSpotHasVideo] = useState(false);
 
+  // ─── Loading state for preloading assets ───────────────────────────────────
+  const [isPreloading, setIsPreloading] = useState(false);
+
   // ─── Black fade overlay (no-video navigation + video-end transition) ──────
   const [fadeOverlay, setFadeOverlay] = useState(false);
   const {
@@ -63,6 +66,8 @@ export default function TourPage() {
     reverseVideoUrl = null,
   ) => {
     if (!project) return;
+    if (isPreloading) return; // Prevent multiple simultaneous preloads
+
     const targetNode = project.nodes?.[targetNodeId];
 
     let resolvedUrl;
@@ -97,8 +102,15 @@ export default function TourPage() {
 
     const transitionData = resolvedUrl ? { videoUrl: resolvedUrl } : null;
 
-    // Background preload
-    await preloadNextAssets(targetNode, transitionData);
+    // Preload assets and show loading indicator
+    setIsPreloading(true);
+    try {
+      await preloadNextAssets(targetNode, transitionData);
+    } catch (error) {
+      console.error("Preload failed:", error);
+    } finally {
+      setIsPreloading(false);
+    }
 
     // ─── THREE INDEPENDENT VALUES ───
     // 1. User Camera Drag (pure user input) - preserved across navigation
@@ -131,7 +143,7 @@ export default function TourPage() {
       navigateTo(targetNodeId, resolvedUrl, playMode);
     } else {
       console.log(
-        "🚀 No video transition: cross-fade to target node, preserving cameraaaaaaaaa",
+        "🚀 No video transition: cross-fade to target node, preserving camera",
         resolvedUrl,
       );
       // No video: cross-fade transition, preserve camera
@@ -148,6 +160,8 @@ export default function TourPage() {
   // ─── Sidebar quick-jump (no transition video) ─────────────────────────────
   const handleSidebarNavigate = async (targetNodeId) => {
     if (targetNodeId === activeNodeId || !project) return;
+    if (isPreloading) return; // Prevent multiple simultaneous preloads
+
     cancelTransition();
     // Reset camera to 0,0 for sidebar navigation (fresh start)
     setPreservedCameraYaw(0);
@@ -155,8 +169,19 @@ export default function TourPage() {
     setVideoTextureYawOffset(null);
     setActiveVideoUrl(null);
     setSpotHasVideo(false);
+
     const targetNode = project.nodes?.[targetNodeId];
-    await preloadNextAssets(targetNode, null);
+
+    // Preload assets before navigation
+    setIsPreloading(true);
+    try {
+      await preloadNextAssets(targetNode, null);
+    } catch (error) {
+      console.error("Preload failed:", error);
+    } finally {
+      setIsPreloading(false);
+    }
+
     setActiveNodeId(targetNodeId);
   };
 
@@ -242,6 +267,16 @@ export default function TourPage() {
         onToggleAudio={toggleAudio}
         audioEnabled={audioEnabled}
       />
+
+      {/* ── Preloading indicator ── */}
+      {isPreloading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+            <p className="text-white/80 text-sm font-medium">Loading...</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Black fade overlay (only for sidebar navigation) ── */}
       {fadeOverlay && (
