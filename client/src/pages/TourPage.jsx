@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useTour } from "../hooks/useTour.js";
-import { usePreloader } from "../hooks/usePreloader.js";
+// import { usePreloader } from "../hooks/usePreloader.js";
 import SphereViewer from "../components/Sphere/SphereViewer.jsx";
 import NavigationSidebar from "../components/Sidebar/NavigationSidebar.jsx";
 import InfoPopup from "../components/Popup/InfoPopup.jsx";
@@ -10,7 +10,7 @@ const FADE_MS = 250; // ms for fade-to-black transitions
 
 export default function TourPage() {
   const { projectId } = useParams();
-  const { preloadNextAssets } = usePreloader();
+  // const { preloadNextAssets } = usePreloader();
 
   // ─── Info popup state (rendered outside Canvas) ───────────────────────────
   const [activePopup, setActivePopup] = useState(null); // popupContent object
@@ -48,6 +48,7 @@ export default function TourPage() {
     cancelTransition,
     onTransitionComplete,
     setActiveNodeId,
+    preloadNextAssets,
   } = useTour(projectId);
 
   // ─── Compute target node for video transition (to show behind the video) ──

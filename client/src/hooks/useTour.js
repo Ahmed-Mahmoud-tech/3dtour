@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
+import { useSmartPreloader } from "./useSmartPreloader";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -12,12 +13,17 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
  *  - Transition lifecycle (preload → play → complete)
  *  - Audio state
  *  - UI visibility (hotspots/signs hidden during transitions)
+ *  - Smart preloading (initial 5 nodes, then background loading by proximity)
  */
 export function useTour(projectId) {
   const [project, setProject] = useState(null);
   const [activeNodeId, setActiveNodeId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Smart preloader
+  const { preloadRemaining, cancelBackgroundLoading, preloadNextAssets } =
+    useSmartPreloader();
 
   // Transition state
   const [transition, setTransition] = useState(null); // { videoUrl, playMode, targetNodeId }
@@ -28,7 +34,7 @@ export function useTour(projectId) {
   const [audioMuted, setAudioMuted] = useState(false);
   const audioRef = useRef(null);
 
-  // ─── Fetch project ──────────────────────────────────────────────────────────
+  // ─── Fetch project (NO blocking preload - instant start like old usePreloader) ────
   useEffect(() => {
     if (!projectId) return;
 
@@ -39,9 +45,10 @@ export function useTour(projectId) {
           `${API_BASE}/projects/${projectId}/public`,
         );
         setProject(data);
-        setActiveNodeId(
-          data.settings?.initialNodeId || Object.keys(data.nodes)[0],
-        );
+
+        const initialId =
+          data.settings?.initialNodeId || Object.keys(data.nodes)[0];
+        setActiveNodeId(initialId);
       } catch (err) {
         setError(err.response?.data?.message || "Failed to load tour");
       } finally {
@@ -78,6 +85,25 @@ export function useTour(projectId) {
       audio.src = "";
     };
   }, [project]);
+
+  // ─── Background preload neighbors (silent, non-blocking) ──────────────────
+  useEffect(() => {
+    if (!project || !activeNodeId) return;
+
+    // Cancel any previous background loading to re-prioritize from current node
+    cancelBackgroundLoading();
+
+    // Start silent background loading of immediate neighbors
+    // This runs in the background and never blocks user interaction
+    const timer = setTimeout(() => {
+      preloadRemaining(project, activeNodeId);
+    }, 5000); // 5 seconds - user has settled, start preloading neighbors
+
+    return () => {
+      clearTimeout(timer);
+      cancelBackgroundLoading();
+    };
+  }, [project, activeNodeId, preloadRemaining, cancelBackgroundLoading]);
 
   const toggleAudio = useCallback(() => {
     if (!audioRef.current) return;
@@ -153,5 +179,6 @@ export function useTour(projectId) {
     cancelTransition,
     onTransitionComplete,
     setActiveNodeId,
+    preloadNextAssets, // Expose for hover preloading
   };
 }
