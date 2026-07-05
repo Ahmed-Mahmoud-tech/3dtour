@@ -129,6 +129,7 @@ export function useTour(projectId) {
   const onTransitionComplete = useCallback(() => {
     if (!transition) return;
     // Node was already changed when video started, just cleanup transition state
+    // setActiveNodeId(transition.targetNodeId);
     setTransition(null);
     setIsTransitioning(false);
     setHotspotVisible(true);

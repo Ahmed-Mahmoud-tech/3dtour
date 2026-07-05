@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback, useState, Suspense } from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { useTexture, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -17,6 +17,7 @@ function PanoramaSphere({
   onFadeComplete,
   yawOffset = 0,
   useBackground = true,
+  customSphere = SPHERE_RADIUS,
 }) {
   const texture = useTexture(panoramaUrl);
   const { gl, scene } = useThree();
@@ -29,14 +30,14 @@ function PanoramaSphere({
     onFadeCompleteRef.current = onFadeComplete;
   });
 
-  // Smooth fade animation - 1 second transition
+  // Smooth fade animation - ~1 second transition
   useFrame(() => {
     if (matRef.current) {
       const target = opacity;
       const current = opacityRef.current;
       if (Math.abs(current - target) > 0.001) {
-        // Smooth fade: ~1 second at 60fps using lerp factor 0.04
-        opacityRef.current += (target - current) * 0.04;
+        // Smooth fade: ~1 second at 60fps using lerp factor 0.05 for slower, smoother transition
+        opacityRef.current += (target - current) * 0.05;
         matRef.current.opacity = opacityRef.current;
       } else if (current !== target) {
         opacityRef.current = target;
@@ -80,9 +81,13 @@ function PanoramaSphere({
   );
 
   // Render a transparent sphere for cross-fade effect
+  // During fade-in, use smaller radius to render in front of the previous panorama
+  const isFadingIn = opacity > opacityRef.current && opacityRef.current < 0.95;
+  const radius = isFadingIn ? customSphere - 0.02 : customSphere;
+
   return (
     <mesh ref={meshRef} rotation={[0, rotationY, 0]}>
-      <sphereGeometry args={[SPHERE_RADIUS, 128, 64]} />
+      <sphereGeometry args={[radius, 128, 64]} />
       <meshBasicMaterial
         ref={matRef}
         map={texture}
@@ -96,15 +101,22 @@ function PanoramaSphere({
 
 // ─── Drag-to-pan Camera Controls ─────────────────────────────────────────────
 // Camera only responds to user drag. Initial position is 0,0 unless preserved from previous navigation.
-function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
+function PanoramaControls({
+  preservedCameraYaw = null,
+  preservedCameraPitch = null,
+  onYawChange,
+  onPitchChange,
+}) {
   const { camera, gl } = useThree();
   const isDragging = useRef(false);
   const prevMouse = useRef({ x: 0, y: 0 });
   const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
   const onYawChangeRef = useRef(onYawChange);
+  const onPitchChangeRef = useRef(onPitchChange);
 
   useEffect(() => {
     onYawChangeRef.current = onYawChange;
+    onPitchChangeRef.current = onPitchChange;
   });
 
   // Set camera to preserved position on mount, or 0,0 if first visit
@@ -113,18 +125,33 @@ function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
       euler.current.y = preservedCameraYaw; // already in radians
       console.log(
         "🎥 USER CAMERA DRAG (preserved):",
-        ((preservedCameraYaw * 180) / Math.PI).toFixed(2) + "°",
+        ((preservedCameraYaw * 180) / Math.PI).toFixed(2) + "° yaw",
         "(pure user input, independent of mesh rotation)",
       );
     } else {
       euler.current.y = 0;
       console.log(
-        "🎥 USER CAMERA DRAG (initial): 0° (pure user input, independent of mesh rotation)",
+        "🎥 USER CAMERA DRAG (initial): 0° yaw (pure user input, independent of mesh rotation)",
       );
     }
-    euler.current.x = 0;
+
+    if (preservedCameraPitch !== null) {
+      euler.current.x = preservedCameraPitch; // already in radians
+      console.log(
+        "🎥 USER CAMERA DRAG (preserved):",
+        ((preservedCameraPitch * 180) / Math.PI).toFixed(2) + "° pitch",
+        "(pure user input, independent of mesh rotation)",
+      );
+    } else {
+      euler.current.x = 0;
+      console.log(
+        "🎥 USER CAMERA DRAG (initial): 0° pitch (pure user input, independent of mesh rotation)",
+      );
+    }
+
     camera.quaternion.setFromEuler(euler.current);
     onYawChangeRef.current?.(euler.current.y);
+    onPitchChangeRef.current?.(euler.current.x);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,8 +179,9 @@ function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
 
       camera.quaternion.setFromEuler(euler.current);
 
-      // Report camera yaw changes from user drag
+      // Report camera yaw and pitch changes from user drag
       onYawChangeRef.current?.(euler.current.y);
+      onPitchChangeRef.current?.(euler.current.x);
     },
     [camera],
   );
@@ -161,6 +189,7 @@ function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
   const onPointerUp = useCallback((e) => {
     isDragging.current = false;
     onYawChangeRef.current?.(euler.current.y);
+    onPitchChangeRef.current?.(euler.current.x);
     if (e?.target?.releasePointerCapture)
       e.target.releasePointerCapture(e.pointerId);
   }, []);
@@ -183,6 +212,7 @@ function PanoramaControls({ preservedCameraYaw = null, onYawChange }) {
   const onTouchEnd = useCallback(() => {
     isDragging.current = false;
     onYawChangeRef.current?.(euler.current.y);
+    onPitchChangeRef.current?.(euler.current.x);
   }, []);
 
   useEffect(() => {
@@ -243,25 +273,35 @@ function VideoSphere({
     if (texture) texture.needsUpdate = true;
     if (matRef.current) {
       if (fadingOutRef.current) {
-        // Fade out smoothly: ~1 second at 60 fps
+        // Fade out smoothly: ~0.5 second at 60 fps
         // Call onEnded when fade STARTS to switch nodes
         if (!onEndedCalledRef.current) {
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
+        // // Continue fading out
+        // if (!fadeCompleteCalledRef.current) {
+        //   opacityRef.current = Math.max(0, opacityRef.current - 0.03);
+        //   matRef.current.opacity = opacityRef.current;
+        //   if (opacityRef.current <= 0) {
+        //     fadeCompleteCalledRef.current = true;
+        //     // Call onFadeComplete when fade is DONE to cleanup
+        //     onFadeCompleteRef.current?.();
+        //   }
+        // }
         // Continue fading out
         if (!fadeCompleteCalledRef.current) {
-          opacityRef.current = Math.max(0, opacityRef.current - 0.0167);
+          // opacityRef.current = Math.max(0, opacityRef.current - 0.03);
+          // if (opacityRef.current <= 0) {
           matRef.current.opacity = opacityRef.current;
-          if (opacityRef.current <= 0) {
-            fadeCompleteCalledRef.current = true;
-            // Call onFadeComplete when fade is DONE to cleanup
-            onFadeCompleteRef.current?.();
-          }
+          fadeCompleteCalledRef.current = true;
+          // Call onFadeComplete when fade is DONE to cleanup
+          onFadeCompleteRef.current?.();
+          // }
         }
       } else if (opacityRef.current < 1) {
-        // Fade in smoothly: ~1 second to fully opaque at 60 fps
-        opacityRef.current = Math.min(1, opacityRef.current + 0.0167);
+        // Fade in smoothly: ~0.5 second to fully opaque at 60 fps
+        opacityRef.current = Math.min(1, opacityRef.current + 0.05);
         matRef.current.opacity = opacityRef.current;
       }
     }
@@ -359,11 +399,14 @@ function VideoSphere({
 function Scene({
   node,
   previousNode,
+  targetNodeForVideo,
   hotspotVisible,
   onNavigate,
   onSignClick,
   preservedCameraYaw,
+  preservedCameraPitch,
   onYawChange,
+  onPitchChange,
   transitionVideoUrl,
   onTransitionComplete,
   onVideoFadeComplete,
@@ -377,28 +420,41 @@ function Scene({
       <PanoramaControls
         key={node.id}
         preservedCameraYaw={preservedCameraYaw}
+        preservedCameraPitch={preservedCameraPitch}
         onYawChange={onYawChange}
+        onPitchChange={onPitchChange}
       />
-
-      {/* Previous panorama fading out - rotated by its yawOffset */}
-      {previousNode && previousPanoramaOpacity > 0 && (
+      {/* Previous panorama - stays at full opacity, renders as mesh (not background) */}
+      {/* {previousNode && previousPanoramaOpacity > 0 && (
         <PanoramaSphere
           panoramaUrl={previousNode.panoramaUrl}
           opacity={previousPanoramaOpacity}
           onFadeComplete={onPreviousFadeComplete}
           yawOffset={previousNode.initialYawOffset || 0}
-          useBackground={!transitionVideoUrl}
+          useBackground={false}
         />
+      )} */}
+      {/* Target node panorama - rendered behind the video during transition */}
+      {targetNodeForVideo && transitionVideoUrl && (
+        <Suspense fallback={null}>
+          <PanoramaSphere
+            key={`target-${targetNodeForVideo.id}`}
+            panoramaUrl={targetNodeForVideo.panoramaUrl}
+            opacity={1}
+            yawOffset={targetNodeForVideo.initialYawOffset || 0}
+            useBackground={false}
+            customSphere={SPHERE_RADIUS + 0.05}
+          />
+        </Suspense>
       )}
-
-      {/* Current panorama - rotated by its yawOffset to align with world direction */}
+      {/* Current panorama - fades in on top as mesh during transition */}
       <PanoramaSphere
+        key={node.id}
         panoramaUrl={node.panoramaUrl}
         opacity={panoramaOpacity}
         yawOffset={node.initialYawOffset || 0}
-        useBackground={!transitionVideoUrl}
+        useBackground={!transitionVideoUrl && !previousNode}
       />
-
       {/* Video sphere - rotated by video's yawOffset */}
       {transitionVideoUrl && (
         <VideoSphere
@@ -408,7 +464,6 @@ function Scene({
           textureYawOffset={videoTextureYawOffset || 0}
         />
       )}
-
       {/* Hotspots and signs - rotated by same yawOffset as panorama to stay in correct position */}
       <group
         rotation={[0, THREE.MathUtils.degToRad(node.initialYawOffset || 0), 0]}
@@ -440,60 +495,100 @@ function Scene({
  */
 export default function SphereViewer({
   node,
+  targetNodeForVideo,
   hotspotVisible,
   onNavigate,
   onSignClick,
   preservedCameraYaw,
+  preservedCameraPitch,
   onYawChange,
+  onPitchChange,
   transitionVideoUrl,
   onTransitionComplete,
   onVideoFadeComplete,
   videoTextureYawOffset,
+  spotHasVideo,
 }) {
   const [previousNode, setPreviousNode] = useState(null);
   const [panoramaOpacity, setPanoramaOpacity] = useState(1);
   const [previousPanoramaOpacity, setPreviousPanoramaOpacity] = useState(0);
+  const fadeOutTimeoutRef = useRef(null);
   const nodeIdRef = useRef(node?.id);
   const nodeDataRef = useRef({
     panoramaUrl: node?.panoramaUrl,
     initialYawOffset: node?.initialYawOffset,
   });
+  const prevVideoUrlRef = useRef(transitionVideoUrl);
 
-  // Fade out current panorama when video transition starts
+  // Handle video transitions: hide current panorama when video starts
   useEffect(() => {
-    if (transitionVideoUrl) {
-      // Video is starting, fade out ALL panoramas (current and previous)
+    const hadVideo = prevVideoUrlRef.current;
+    const hasVideo = transitionVideoUrl;
+
+    if (hasVideo) {
+      // Video is starting, hide current panorama (target node is shown behind video)
       setPanoramaOpacity(0);
       setPreviousPanoramaOpacity(0);
       // Clean up previous node since we're transitioning
       if (previousNode) {
         setPreviousNode(null);
       }
+    } else if (hadVideo && !hasVideo) {
+      // Video just finished - target node is now the active node, show it
+      setPanoramaOpacity(1);
     }
+
+    prevVideoUrlRef.current = transitionVideoUrl;
   }, [transitionVideoUrl]);
 
-  // Detect node change and trigger cross-fade
+  // Detect node change and trigger cross-fade (only for non-video transitions)
   useEffect(() => {
     if (node && nodeIdRef.current !== node.id) {
-      // Store previous node data including yawOffset for proper rotation during fade
-      setPreviousNode({
-        id: nodeIdRef.current,
-        panoramaUrl: nodeDataRef.current.panoramaUrl,
-        initialYawOffset: nodeDataRef.current.initialYawOffset,
-      });
-      setPreviousPanoramaOpacity(1);
-      setPanoramaOpacity(0);
+      const hasVideo = transitionVideoUrl;
+
+      // Only set up cross-fade if there's NO video transition
+      if (!spotHasVideo) {
+        // Store previous node data including yawOffset for proper rotation during fade
+        setPreviousNode({
+          id: nodeIdRef.current,
+          panoramaUrl: nodeDataRef.current.panoramaUrl,
+          initialYawOffset: nodeDataRef.current.initialYawOffset,
+        });
+        // Keep old panorama at full opacity (no fade out needed)
+        setPreviousPanoramaOpacity(1);
+        console.log(
+          spotHasVideo,
+          "🌀 CROSS-FADE: Node changed fromaaaaaaaaaaaaa",
+          nodeIdRef.current,
+          "to",
+          node.id,
+        );
+        setPanoramaOpacity(0);
+      }
+
       nodeIdRef.current = node.id;
       nodeDataRef.current = {
         panoramaUrl: node.panoramaUrl,
         initialYawOffset: node.initialYawOffset,
       };
 
-      // Start cross-fade
-      requestAnimationFrame(() => {
-        setPreviousPanoramaOpacity(0);
-        setPanoramaOpacity(1);
-      });
+      // Clear any pending fade-out timeout
+      if (fadeOutTimeoutRef.current) {
+        clearTimeout(fadeOutTimeoutRef.current);
+      }
+
+      // Only trigger cross-fade animation if there's no video
+      if (!hasVideo) {
+        // Start fading in the new panorama immediately (it will render in front)
+        requestAnimationFrame(() => {
+          setPanoramaOpacity(1);
+        });
+
+        // Remove old panorama after new one is fully visible (600ms)
+        fadeOutTimeoutRef.current = setTimeout(() => {
+          setPreviousNode(null);
+        }, 600);
+      }
     } else if (node && !previousNode) {
       // First load
       nodeIdRef.current = node?.id;
@@ -503,10 +598,20 @@ export default function SphereViewer({
       };
       setPanoramaOpacity(1);
     }
-  }, [node?.id]);
+  }, [node?.id, transitionVideoUrl]);
 
   const handlePreviousFadeComplete = useCallback(() => {
-    setPreviousNode(null);
+    // This callback is no longer needed since we remove the node directly
+    // but kept for compatibility
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (fadeOutTimeoutRef.current) {
+        clearTimeout(fadeOutTimeoutRef.current);
+      }
+    };
   }, []);
 
   if (!node) return null;
@@ -528,11 +633,14 @@ export default function SphereViewer({
       <Scene
         node={node}
         previousNode={previousNode}
+        targetNodeForVideo={targetNodeForVideo}
         hotspotVisible={hotspotVisible}
         onNavigate={onNavigate}
         onSignClick={onSignClick}
         preservedCameraYaw={preservedCameraYaw}
+        preservedCameraPitch={preservedCameraPitch}
         onYawChange={onYawChange}
+        onPitchChange={onPitchChange}
         transitionVideoUrl={transitionVideoUrl}
         onTransitionComplete={onTransitionComplete}
         onVideoFadeComplete={onVideoFadeComplete}

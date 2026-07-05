@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback, useState, Suspense } from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { useTexture, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -17,6 +17,7 @@ function PanoramaSphere({
   onFadeComplete,
   yawOffset = 0,
   useBackground = true,
+  customSphere = SPHERE_RADIUS,
 }) {
   const texture = useTexture(panoramaUrl);
   const { gl, scene } = useThree();
@@ -82,7 +83,7 @@ function PanoramaSphere({
   // Render a transparent sphere for cross-fade effect
   // During fade-in, use smaller radius to render in front of the previous panorama
   const isFadingIn = opacity > opacityRef.current && opacityRef.current < 0.95;
-  const radius = isFadingIn ? SPHERE_RADIUS - 0.02 : SPHERE_RADIUS;
+  const radius = isFadingIn ? customSphere - 0.02 : customSphere;
 
   return (
     <mesh ref={meshRef} rotation={[0, rotationY, 0]}>
@@ -423,7 +424,6 @@ function Scene({
         onYawChange={onYawChange}
         onPitchChange={onPitchChange}
       />
-
       {/* Previous panorama - stays at full opacity, renders as mesh (not background) */}
       {/* {previousNode && previousPanoramaOpacity > 0 && (
         <PanoramaSphere
@@ -434,18 +434,19 @@ function Scene({
           useBackground={false}
         />
       )} */}
-
       {/* Target node panorama - rendered behind the video during transition */}
-      {/* {targetNodeForVideo && transitionVideoUrl && (
-        <PanoramaSphere
-          key={`target-${targetNodeForVideo.id}`}
-          panoramaUrl={targetNodeForVideo.panoramaUrl}
-          opacity={1}
-          yawOffset={targetNodeForVideo.initialYawOffset || 0}
-          useBackground={false}
-        />
-      )} */}
-
+      {targetNodeForVideo && transitionVideoUrl && (
+        <Suspense fallback={null}>
+          <PanoramaSphere
+            key={`target-${targetNodeForVideo.id}`}
+            panoramaUrl={targetNodeForVideo.panoramaUrl}
+            opacity={1}
+            yawOffset={targetNodeForVideo.initialYawOffset || 0}
+            useBackground={false}
+            customSphere={SPHERE_RADIUS + 0.05}
+          />
+        </Suspense>
+      )}
       {/* Current panorama - fades in on top as mesh during transition */}
       <PanoramaSphere
         key={node.id}
@@ -454,7 +455,6 @@ function Scene({
         yawOffset={node.initialYawOffset || 0}
         useBackground={!transitionVideoUrl && !previousNode}
       />
-
       {/* Video sphere - rotated by video's yawOffset */}
       {transitionVideoUrl && (
         <VideoSphere
@@ -464,7 +464,6 @@ function Scene({
           textureYawOffset={videoTextureYawOffset || 0}
         />
       )}
-
       {/* Hotspots and signs - rotated by same yawOffset as panorama to stay in correct position */}
       <group
         rotation={[0, THREE.MathUtils.degToRad(node.initialYawOffset || 0), 0]}
