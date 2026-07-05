@@ -118,6 +118,7 @@ export default function TourPage() {
     // 2. Target Panorama Rotation (from node.initialYawOffset) - rotates the image sphere
     // 3. Video Rotation (from videoInitialYawOffset) - rotates the video sphere
     const currentCameraYaw = cameraYawRef.current; // in radians
+    const currentCameraPitch = cameraPitchRef.current; // in radians
     const targetPanoramaRotation = targetNode.initialYawOffset || 0; // in degrees
 
     console.log("\n═══════════════════════════════════════════════");
@@ -125,7 +126,10 @@ export default function TourPage() {
     console.log("───────────────────────────────────────────────");
     console.log(
       "1️⃣  USER CAMERA DRAG (preserved):",
-      ((currentCameraYaw * 180) / Math.PI).toFixed(2) + "°",
+      ((currentCameraYaw * 180) / Math.PI).toFixed(2) +
+        "° yaw, " +
+        ((currentCameraPitch * 180) / Math.PI).toFixed(2) +
+        "° pitch",
     );
     console.log(
       "2️⃣  TARGET PANORAMA IMAGE ROTATION:",
@@ -137,7 +141,7 @@ export default function TourPage() {
     if (resolvedUrl) {
       // Video transition: preserve camera, rotate video sphere
       setPreservedCameraYaw(currentCameraYaw);
-      setPreservedCameraPitch(cameraPitchRef.current);
+      setPreservedCameraPitch(currentCameraPitch);
       setVideoTextureYawOffset(videoYawOffset);
       setActiveVideoUrl(resolvedUrl);
       setSpotHasVideo(true);
@@ -149,7 +153,7 @@ export default function TourPage() {
       );
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
-      setPreservedCameraPitch(cameraPitchRef.current);
+      setPreservedCameraPitch(currentCameraPitch);
       setVideoTextureYawOffset(null);
       setActiveVideoUrl(null);
       setSpotHasVideo(false);

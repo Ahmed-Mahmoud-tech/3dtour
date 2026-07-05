@@ -139,7 +139,8 @@ function PanoramaControls({
     onPitchChangeRef.current = onPitchChange;
   });
 
-  // Set camera to preserved position on mount, or 0,0 if first visit
+  // Set camera to preserved position on mount AND when preserved values update
+  // This fixes race conditions where state updates after component mounts
   useEffect(() => {
     if (preservedCameraYaw !== null) {
       euler.current.y = preservedCameraYaw; // already in radians
@@ -172,8 +173,7 @@ function PanoramaControls({
     camera.quaternion.setFromEuler(euler.current);
     onYawChangeRef.current?.(euler.current.y);
     onPitchChangeRef.current?.(euler.current.x);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [camera, preservedCameraYaw, preservedCameraPitch]);
 
   const onPointerDown = useCallback((e) => {
     e.preventDefault();
