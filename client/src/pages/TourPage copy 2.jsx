@@ -10,7 +10,8 @@ const FADE_MS = 250; // ms for fade-to-black transitions
 
 export default function TourPage() {
   const { projectId } = useParams();
-  const { preloadNextAssets } = usePreloader();
+  const { preloadNextAssets, preloadNearestNodes, isNodePreloaded } =
+    usePreloader();
 
   // ─── Info popup state (rendered outside Canvas) ───────────────────────────
   const [activePopup, setActivePopup] = useState(null); // popupContent object
@@ -28,8 +29,8 @@ export default function TourPage() {
   const [activeVideoUrl, setActiveVideoUrl] = useState(null);
   const [spotHasVideo, setSpotHasVideo] = useState(false);
 
-  // ─── Render state for pre-rendering assets ───────────────────────────────────
-  const [isPreRender, setIsPreRender] = useState(false);
+  // ─── Loading state for preloading assets (only shown for un-preloaded nodes) ───────────
+  const [isPreloading, setIsPreloading] = useState(false);
 
   // ─── Black fade overlay (no-video navigation + video-end transition) ──────
   const [fadeOverlay, setFadeOverlay] = useState(false);
@@ -56,6 +57,16 @@ export default function TourPage() {
     return project.nodes[transition.targetNodeId] || null;
   }, [transition?.targetNodeId, project?.nodes]);
 
+  // ─── Preload nearest 5 nodes on initial load and after each navigation ────
+  useEffect(() => {
+    if (activeNodeId && project) {
+      // Run preload in background without blocking
+      preloadNearestNodes(activeNodeId, project, 5).catch((err) => {
+        console.warn("Background preload failed:", err);
+      });
+    }
+  }, [activeNodeId, project, preloadNearestNodes]);
+
   // ─── Preload next assets when hovering / navigating ──────────────────────
   const handleNavigate = async (
     targetNodeId,
@@ -66,8 +77,7 @@ export default function TourPage() {
     reverseVideoUrl = null,
   ) => {
     if (!project) return;
-    if (isPreRender) return; // Prevent multiple simultaneous preloads
-    setIsPreRender(true);
+    if (isPreloading) return; // Prevent multiple simultaneous preloads
 
     const targetNode = project.nodes?.[targetNodeId];
 
@@ -103,13 +113,27 @@ export default function TourPage() {
 
     const transitionData = resolvedUrl ? { videoUrl: resolvedUrl } : null;
 
-    // Pre-render assets and show pre-rendering indicator
-    try {
-      await preloadNextAssets(targetNode, transitionData);
-    } catch (error) {
-      console.error("Pre-render failed:", error);
-    } finally {
-      setIsPreRender(false);
+    // Only show loading and wait if target node is NOT preloaded
+    const needsPreload = !isNodePreloaded(targetNodeId);
+
+    if (needsPreload) {
+      console.log(
+        "⚠️ Target node not preloaded, loading now:",
+        targetNode?.displayName,
+      );
+      setIsPreloading(true);
+      try {
+        await preloadNextAssets(targetNode, transitionData);
+      } catch (error) {
+        console.error("Preload failed:", error);
+      } finally {
+        setIsPreloading(false);
+      }
+    } else {
+      console.log(
+        "✅ Target node already preloaded, instant navigation:",
+        targetNode?.displayName,
+      );
     }
 
     // ─── THREE INDEPENDENT VALUES ───
@@ -160,7 +184,7 @@ export default function TourPage() {
   // ─── Sidebar quick-jump (no transition video) ─────────────────────────────
   const handleSidebarNavigate = async (targetNodeId) => {
     if (targetNodeId === activeNodeId || !project) return;
-    if (isPreRender) return; // Prevent multiple simultaneous preloads
+    if (isPreloading) return; // Prevent multiple simultaneous preloads
 
     cancelTransition();
     // Reset camera to 0,0 for sidebar navigation (fresh start)
@@ -172,14 +196,27 @@ export default function TourPage() {
 
     const targetNode = project.nodes?.[targetNodeId];
 
-    // Preload assets before navigation
-    setIsPreRender(true);
-    try {
-      await preloadNextAssets(targetNode, null);
-    } catch (error) {
-      console.error("Preload failed:", error);
-    } finally {
-      setIsPreRender(false);
+    // Only show loading and wait if target node is NOT preloaded
+    const needsPreload = !isNodePreloaded(targetNodeId);
+
+    if (needsPreload) {
+      console.log(
+        "⚠️ Target node not preloaded (sidebar nav), loading now:",
+        targetNode?.displayName,
+      );
+      setIsPreloading(true);
+      try {
+        await preloadNextAssets(targetNode, null);
+      } catch (error) {
+        console.error("Preload failed:", error);
+      } finally {
+        setIsPreloading(false);
+      }
+    } else {
+      console.log(
+        "✅ Target node already preloaded (sidebar nav), instant navigation:",
+        targetNode?.displayName,
+      );
     }
 
     setActiveNodeId(targetNodeId);
@@ -268,15 +305,15 @@ export default function TourPage() {
         audioEnabled={audioEnabled}
       />
 
-      {/* ── Pre-render indicator ── */}
-      {/* {isPreRender && (
+      {/* ── Preloading indicator ── */}
+      {isPreloading && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
             <p className="text-white/80 text-sm font-medium">Loading...</p>
           </div>
         </div>
-      )} */}
+      )}
 
       {/* ── Black fade overlay (only for sidebar navigation) ── */}
       {fadeOverlay && (
