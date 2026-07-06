@@ -169,8 +169,8 @@ export default function TourPage() {
 
     cancelTransition();
     // Reset camera to 0,0 for sidebar navigation (fresh start)
-    setPreservedCameraYaw(0);
-    setPreservedCameraPitch(0);
+    // setPreservedCameraYaw(0);
+    // setPreservedCameraPitch(0);
     setVideoTextureYawOffset(null);
     setActiveVideoUrl(null);
     setSpotHasVideo(false);

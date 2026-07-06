@@ -631,11 +631,11 @@ export default function SphereViewer({
         requestAnimationFrame(() => {
           setPanoramaOpacity(1);
         });
-
         // Remove old panorama after new one is fully visible (600ms)
-        fadeOutTimeoutRef.current = setTimeout(() => {
-          setPreviousNode(null);
-        }, 600);
+        // fadeOutTimeoutRef.current = setTimeout(() => {
+        setPreviousNode(null);
+        // }, 0);
+        // }, 600);
       }
     } else if (node && !previousNode) {
       // First load
@@ -646,6 +646,7 @@ export default function SphereViewer({
       };
       setPanoramaOpacity(1);
     }
+    // }, [transitionVideoUrl]);
   }, [node?.id, transitionVideoUrl]);
 
   const handlePreviousFadeComplete = useCallback(() => {
