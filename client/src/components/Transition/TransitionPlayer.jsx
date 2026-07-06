@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from "react";
 
 /**
  * TransitionPlayer
@@ -41,37 +41,37 @@ export default function TransitionPlayer({ videoUrl, onComplete, onPlaying }) {
       if (!mounted) return;
       // Fade out before calling onComplete
       setOpacity(0);
-      setTimeout(() => {
-        if (mounted) onComplete();
-      }, 300);
+      // setTimeout(() => {
+      if (mounted) onComplete();
+      // }, 300);
     };
 
     const handleError = () => {
       if (!mounted) return;
-      console.error('Transition video failed to load:', videoUrl);
+      console.error("Transition video failed to load:", videoUrl);
       onComplete(); // Gracefully skip broken transition
     };
 
-    video.addEventListener('playing', handlePlaying);
-    video.addEventListener('ended', handleEnded);
-    video.addEventListener('error', handleError);
+    video.addEventListener("playing", handlePlaying);
+    video.addEventListener("ended", handleEnded);
+    video.addEventListener("error", handleError);
 
     // Auto-play; ignore AbortError caused by cleanup unmount (React StrictMode)
     video.play().catch((err) => {
       if (!mounted) return;
-      if (err.name !== 'AbortError') {
-        console.error('Transition video play rejected:', err);
+      if (err.name !== "AbortError") {
+        console.error("Transition video play rejected:", err);
         onComplete();
       }
     });
 
     return () => {
       mounted = false;
-      video.removeEventListener('playing', handlePlaying);
-      video.removeEventListener('ended', handleEnded);
-      video.removeEventListener('error', handleError);
+      video.removeEventListener("playing", handlePlaying);
+      video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("error", handleError);
       video.pause();
-      video.src = '';
+      video.src = "";
     };
   }, [videoUrl, onComplete, onPlaying]);
 
@@ -80,7 +80,7 @@ export default function TransitionPlayer({ videoUrl, onComplete, onPlaying }) {
       className="absolute inset-0 z-50 bg-black"
       style={{
         opacity,
-        transition: 'opacity 300ms ease',
+        transition: "opacity 300ms ease",
       }}
     >
       <video
