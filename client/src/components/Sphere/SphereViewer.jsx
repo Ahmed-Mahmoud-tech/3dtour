@@ -142,37 +142,49 @@ function PanoramaControls({
   // Set camera to preserved position on mount AND when preserved values update
   // This fixes race conditions where state updates after component mounts
   useEffect(() => {
-    if (preservedCameraYaw !== null) {
+    let updated = false;
+
+    if (preservedCameraYaw !== null && euler.current.y !== preservedCameraYaw) {
       euler.current.y = preservedCameraYaw; // already in radians
+      updated = true;
       console.log(
         "🎥 USER CAMERA DRAG (preserved):",
         ((preservedCameraYaw * 180) / Math.PI).toFixed(2) + "° yaw",
         "(pure user input, independent of mesh rotation)",
       );
-    } else {
+    } else if (preservedCameraYaw === null && euler.current.y !== 0) {
       euler.current.y = 0;
+      updated = true;
       console.log(
         "🎥 USER CAMERA DRAG (initial): 0° yaw (pure user input, independent of mesh rotation)",
       );
     }
 
-    if (preservedCameraPitch !== null) {
+    if (
+      preservedCameraPitch !== null &&
+      euler.current.x !== preservedCameraPitch
+    ) {
       euler.current.x = preservedCameraPitch; // already in radians
+      updated = true;
       console.log(
         "🎥 USER CAMERA DRAG (preserved):",
         ((preservedCameraPitch * 180) / Math.PI).toFixed(2) + "° pitch",
         "(pure user input, independent of mesh rotation)",
       );
-    } else {
+    } else if (preservedCameraPitch === null && euler.current.x !== 0) {
       euler.current.x = 0;
+      updated = true;
       console.log(
         "🎥 USER CAMERA DRAG (initial): 0° pitch (pure user input, independent of mesh rotation)",
       );
     }
 
-    camera.quaternion.setFromEuler(euler.current);
-    onYawChangeRef.current?.(euler.current.y);
-    onPitchChangeRef.current?.(euler.current.x);
+    // Only update camera if values actually changed
+    if (updated) {
+      camera.quaternion.setFromEuler(euler.current);
+      onYawChangeRef.current?.(euler.current.y);
+      onPitchChangeRef.current?.(euler.current.x);
+    }
   }, [camera, preservedCameraYaw, preservedCameraPitch]);
 
   const onPointerDown = useCallback((e) => {
@@ -455,7 +467,6 @@ function Scene({
   return (
     <>
       <PanoramaControls
-        key={node.id}
         preservedCameraYaw={preservedCameraYaw}
         preservedCameraPitch={preservedCameraPitch}
         onYawChange={onYawChange}
