@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState, Suspense } from "react";
-import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { Canvas, useThree, useFrame, invalidate } from "@react-three/fiber";
 import { useTexture, Html } from "@react-three/drei";
 import * as THREE from "three";
 import NavigationHotspot from "./NavigationHotspot.jsx";
@@ -21,31 +21,70 @@ function PanoramaSphere({
 }) {
   const texture = useTexture(panoramaUrl);
   const { gl, scene } = useThree();
-  const opacityRef = useRef(opacity);
+  // const opacityRef = useRef(opacity);
+  const opacityRef = useRef(0);
   const matRef = useRef();
   const meshRef = useRef();
   const onFadeCompleteRef = useRef(onFadeComplete);
   const [textureReady, setTextureReady] = useState(false);
 
+  // Tracks whether the fade to the current target has already finished,
+  // so useFrame can stop doing any work once there's nothing left to animate.
+  const doneRef = useRef(false);
+  const lastTargetRef = useRef(opacity);
+
   useEffect(() => {
     onFadeCompleteRef.current = onFadeComplete;
   });
 
+  // Whenever the target opacity changes, there's new work to do — reset the
+  // guard and explicitly kick the render loop (Canvas runs frameloop="demand",
+  // so nothing renders/ticks unless we ask for it).
+  useEffect(() => {
+    if (lastTargetRef.current !== opacity) {
+      lastTargetRef.current = opacity;
+      doneRef.current = false;
+      invalidate();
+    }
+  }, [opacity]);
+
+  // Also kick the loop once the texture becomes ready, so the first fade frame runs.
+  useEffect(() => {
+    if (textureReady) invalidate();
+  }, [textureReady]);
+
   // Smooth fade animation - ~1 second transition
   useFrame(() => {
+    // Nothing left to animate for the current target — do no work and,
+    // crucially, do NOT call invalidate(), so the render loop actually stops.
+    if (doneRef.current) return;
+
+    const target = opacity;
+    const current = opacityRef.current;
+    console.log(
+      "dddddddddddddddddd22233333",
+      current,
+      target,
+      Math.abs(current - target) > 0.001,
+    );
     if (matRef.current && textureReady) {
-      const target = opacity;
-      const current = opacityRef.current;
       if (Math.abs(current - target) > 0.001) {
         // Smooth fade: ~1 second at 60fps using lerp factor 0.05 for slower, smoother transition
         opacityRef.current += (target - current) * 0.05;
         matRef.current.opacity = opacityRef.current;
+        // Still animating — ask for exactly one more frame.
+        invalidate();
       } else if (current !== target) {
         opacityRef.current = target;
         matRef.current.opacity = target;
         if (target === 0 && onFadeCompleteRef.current) {
           onFadeCompleteRef.current();
         }
+        // Fade to this target is finished — no more work until opacity changes again.
+        doneRef.current = true;
+      } else {
+        // Already sitting exactly at target with nothing to do.
+        doneRef.current = true;
       }
     }
   });
@@ -74,6 +113,7 @@ function PanoramaSphere({
         scene.background = envMap;
 
         setTextureReady(true);
+        invalidate();
 
         return () => {
           scene.background = null;
@@ -182,6 +222,7 @@ function PanoramaControls({
     // Only update camera if values actually changed
     if (updated) {
       camera.quaternion.setFromEuler(euler.current);
+      invalidate();
       onYawChangeRef.current?.(euler.current.y);
       onPitchChangeRef.current?.(euler.current.x);
     }
@@ -210,6 +251,9 @@ function PanoramaControls({
       euler.current.x = Math.max(-limit, Math.min(limit, euler.current.x));
 
       camera.quaternion.setFromEuler(euler.current);
+      // Canvas uses frameloop="demand" — a ref-only camera mutation like this
+      // won't trigger a render on its own, so ask for one explicitly.
+      invalidate();
 
       // Report camera yaw and pitch changes from user drag
       onYawChangeRef.current?.(euler.current.y);
@@ -300,8 +344,20 @@ function VideoSphere({
     onFadeCompleteRef.current = onFadeComplete;
   });
 
-  // Update video texture + fade-in / fade-out opacity every frame
+  // Once the fade-in has reached 1 (and we're not fading out yet) or the
+  // fade-out has fully completed, there's nothing left for useFrame to do.
+  const doneRef = useRef(false);
+
+  // Update video texture + fade-in / fade-out opacity every frame.
+  // Canvas runs frameloop="demand": this callback only fires as long as
+  // something keeps calling invalidate(). While the video is actively
+  // playing we re-invalidate every frame (the texture needs continuous
+  // updates); the moment fade-out finishes we stop invalidating and the
+  // loop goes fully idle — no more useFrame calls until something new happens.
   useFrame(() => {
+    console.log("dddddddddddddddddd");
+    if (doneRef.current) return;
+
     if (texture) texture.needsUpdate = true;
     if (matRef.current) {
       if (fadingOutRef.current) {
@@ -311,33 +367,37 @@ function VideoSphere({
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
-        // // Continue fading out
-        // if (!fadeCompleteCalledRef.current) {
-        //   opacityRef.current = Math.max(0, opacityRef.current - 0.03);
-        //   matRef.current.opacity = opacityRef.current;
-        //   if (opacityRef.current <= 0) {
-        //     fadeCompleteCalledRef.current = true;
-        //     // Call onFadeComplete when fade is DONE to cleanup
-        //     onFadeCompleteRef.current?.();
-        //   }
-        // }
         // Continue fading out
         if (!fadeCompleteCalledRef.current) {
-          // opacityRef.current = Math.max(0, opacityRef.current - 0.03);
-          // if (opacityRef.current <= 0) {
           matRef.current.opacity = opacityRef.current;
           fadeCompleteCalledRef.current = true;
           // Call onFadeComplete when fade is DONE to cleanup
           onFadeCompleteRef.current?.();
-          // }
         }
+        // Fade-out work (and the ended/fade-complete callbacks) is done — stop.
+        // Deliberately no invalidate() call here, so the loop halts.
+        doneRef.current = true;
       } else if (opacityRef.current < 1) {
         // Fade in smoothly: ~0.5 second to fully opaque at 60 fps
         opacityRef.current = Math.min(1, opacityRef.current + 0.05);
         matRef.current.opacity = opacityRef.current;
+        // Still fading in — ask for another frame.
+        invalidate();
+      } else {
+        // Fully faded in, still playing: texture.needsUpdate must keep
+        // getting set every frame for the video to display correctly,
+        // so keep the loop alive until fade-out kicks in.
+        invalidate();
       }
     }
   });
+
+  // Whenever fade-out is triggered, wake the frame loop back up so it can
+  // run the fade-out branch (and then stop itself again above).
+  const wakeForFadeOut = useCallback(() => {
+    doneRef.current = false;
+    invalidate();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -345,6 +405,7 @@ function VideoSphere({
     fadingOutRef.current = false;
     onEndedCalledRef.current = false;
     fadeCompleteCalledRef.current = false;
+    doneRef.current = false;
 
     const video = document.createElement("video");
     // Set attributes BEFORE src to avoid CORS / load-order issues
@@ -371,12 +432,18 @@ function VideoSphere({
       if (mounted) {
         setTexture(tex);
         console.log("✅ Video playback started:", videoUrl.split("/").pop());
+        // Kick the demand-mode render loop so the fade-in/texture-update
+        // useFrame actually starts running.
+        invalidate();
       }
     };
 
     const handleEnded = () => {
       // Trigger smooth fade-out before notifying parent
-      if (mounted) fadingOutRef.current = true;
+      if (mounted) {
+        fadingOutRef.current = true;
+        wakeForFadeOut();
+      }
     };
 
     const handleError = () => {
@@ -415,7 +482,7 @@ function VideoSphere({
       video.src = "";
       tex.dispose();
     };
-  }, [videoUrl, textureYawOffset]);
+  }, [videoUrl, textureYawOffset, wakeForFadeOut]);
 
   if (!texture) return null;
 
@@ -667,6 +734,12 @@ export default function SphereViewer({
 
   return (
     <Canvas
+      // Render only when invalidate() is explicitly called (by an active
+      // fade, an in-progress video, or a camera drag) instead of ticking
+      // every browser frame forever. This is what actually stops useFrame
+      // from being called once its work is done — early-returning inside
+      // a useFrame callback alone does NOT stop the render loop.
+      frameloop="demand"
       camera={{ fov: 65, near: 0.1, far: 200, position: [0, 0, 0.01] }}
       style={{
         width: "100%",
