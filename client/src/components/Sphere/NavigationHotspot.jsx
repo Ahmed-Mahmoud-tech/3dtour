@@ -23,7 +23,7 @@ export default function NavigationHotspot({ hotspot, onNavigate }) {
     const videoUrl = hotspot.transitionVideoUrl || null;
     const reverseVideoUrl = hotspot.reverseTransitionVideoUrl || null;
 
-    // Pass all transition data; TourPage handles direction preservation
+    // Pass all transition data including multi-video array; TourPage handles direction preservation
     onNavigate(
       hotspot.targetNodeId,
       videoUrl,
@@ -31,6 +31,7 @@ export default function NavigationHotspot({ hotspot, onNavigate }) {
       hotspot.transitionId,
       hotspot.videoInitialYawOffset ?? 0,
       reverseVideoUrl,
+      hotspot.transitionVideos || [],
     );
   };
 

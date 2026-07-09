@@ -18,6 +18,17 @@ const ScaleSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const TransitionVideoItemSchema = new mongoose.Schema(
+  {
+    videoUrl: { type: String, default: "" },
+    reverseVideoUrl: { type: String, default: "" },
+    yawOffset: { type: Number, default: 0 },
+    order: { type: Number, default: 0 },
+    transitionId: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 const NavigationHotspotSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
@@ -34,6 +45,8 @@ const NavigationHotspotSchema = new mongoose.Schema(
       default: "forward",
     },
     videoInitialYawOffset: { type: Number, default: 0 },
+    // Multi-video support: array of videos that play sequentially
+    transitionVideos: { type: [TransitionVideoItemSchema], default: [] },
   },
   { _id: false },
 );

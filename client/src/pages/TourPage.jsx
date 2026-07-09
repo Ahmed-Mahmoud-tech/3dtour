@@ -49,6 +49,9 @@ export default function TourPage() {
     onTransitionComplete,
     setActiveNodeId,
     preloadNextAssets,
+    // Multi-video queue state
+    videoQueue,
+    videoQueueIndex,
   } = useTour(projectId);
 
   // ─── Compute target node for video transition (to show behind the video) ──
@@ -56,6 +59,20 @@ export default function TourPage() {
     if (!transition?.targetNodeId || !project?.nodes) return null;
     return project.nodes[transition.targetNodeId] || null;
   }, [transition?.targetNodeId, project?.nodes]);
+
+  // ─── Sync activeVideoUrl and videoTextureYawOffset when videoQueueIndex changes ──
+  useEffect(() => {
+    if (videoQueue.length > 0 && videoQueueIndex < videoQueue.length && transition) {
+      const currentVideo = videoQueue[videoQueueIndex];
+      setActiveVideoUrl(currentVideo.videoUrl);
+      setVideoTextureYawOffset(currentVideo.yawOffset ?? 0);
+      console.log(
+        `🎬 Playing video ${videoQueueIndex + 1}/${videoQueue.length}`,
+        `URL: ${currentVideo.videoUrl.split("/").pop()}`,
+        `Yaw: ${currentVideo.yawOffset}°`
+      );
+    }
+  }, [videoQueue, videoQueueIndex, transition]);
 
   // ─── Preload next assets when hovering / navigating ──────────────────────
   const handleNavigate = async (
@@ -65,6 +82,7 @@ export default function TourPage() {
     transitionId,
     videoYawOffset = 0,
     reverseVideoUrl = null,
+    transitionVideos = [],
   ) => {
     if (!project) return;
     if (isPreRender) return; // Prevent multiple simultaneous preloads
@@ -72,37 +90,57 @@ export default function TourPage() {
 
     const targetNode = project.nodes?.[targetNodeId];
 
-    let resolvedUrl;
+    // ─── Build the video queue ─────────────────────────────────────────────
+    let resolvedQueue = [];
 
-    if (playMode === "backward") {
-      // Try reverse URL from the backward hotspot itself or its shared transition record
-      let resolvedReverse =
-        reverseVideoUrl ||
-        project.transitions?.[transitionId]?.reverseVideoUrl ||
-        null;
+    if (transitionVideos.length > 0) {
+      // Multi-video: sort by order, resolve URLs based on play direction
+      const sorted = [...transitionVideos].sort((a, b) => a.order - b.order);
+      resolvedQueue = sorted.map((v) => ({
+        videoUrl: playMode === "backward"
+          ? (v.reverseVideoUrl || v.videoUrl)
+          : v.videoUrl,
+        yawOffset: v.yawOffset ?? 0,
+      })).filter((v) => v.videoUrl);
+    } else {
+      // Legacy single-video path
+      let resolvedUrl;
 
-      // Auto-lookup: find the corresponding forward hotspot on the target node
-      if (!resolvedReverse) {
-        const targetNodeData = project.nodes?.[targetNodeId];
-        const forwardHotspot = targetNodeData?.navigationHotspots?.find(
-          (hs) => hs.targetNodeId === activeNodeId,
-        );
-        if (forwardHotspot) {
-          resolvedReverse =
-            forwardHotspot.reverseTransitionVideoUrl ||
-            project.transitions?.[forwardHotspot.transitionId]
-              ?.reverseVideoUrl ||
-            null;
+      if (playMode === "backward") {
+        // Try reverse URL from the backward hotspot itself or its shared transition record
+        let resolvedReverse =
+          reverseVideoUrl ||
+          project.transitions?.[transitionId]?.reverseVideoUrl ||
+          null;
+
+        // Auto-lookup: find the corresponding forward hotspot on the target node
+        if (!resolvedReverse) {
+          const targetNodeData = project.nodes?.[targetNodeId];
+          const forwardHotspot = targetNodeData?.navigationHotspots?.find(
+            (hs) => hs.targetNodeId === activeNodeId,
+          );
+          if (forwardHotspot) {
+            resolvedReverse =
+              forwardHotspot.reverseTransitionVideoUrl ||
+              project.transitions?.[forwardHotspot.transitionId]
+                ?.reverseVideoUrl ||
+              null;
+          }
         }
+
+        resolvedUrl = resolvedReverse || null;
+      } else {
+        resolvedUrl =
+          videoUrl || project.transitions?.[transitionId]?.videoUrl || null;
       }
 
-      resolvedUrl = resolvedReverse || null;
-    } else {
-      resolvedUrl =
-        videoUrl || project.transitions?.[transitionId]?.videoUrl || null;
+      if (resolvedUrl) {
+        resolvedQueue = [{ videoUrl: resolvedUrl, yawOffset: videoYawOffset }];
+      }
     }
 
-    const transitionData = resolvedUrl ? { videoUrl: resolvedUrl } : null;
+    const firstVideoUrl = resolvedQueue.length > 0 ? resolvedQueue[0].videoUrl : null;
+    const transitionData = firstVideoUrl ? { videoUrl: firstVideoUrl } : null;
 
     // Pre-render assets and show pre-rendering indicator
     try {
@@ -122,7 +160,7 @@ export default function TourPage() {
     const targetPanoramaRotation = targetNode.initialYawOffset || 0; // in degrees
 
     console.log("\n═══════════════════════════════════════════════");
-    console.log("� NAVIGATION: 3 INDEPENDENT ROTATIONS");
+    console.log("🎯 NAVIGATION: 3 INDEPENDENT ROTATIONS");
     console.log("───────────────────────────────────────────────");
     console.log(
       "1️⃣  USER CAMERA DRAG (preserved):",
@@ -135,21 +173,24 @@ export default function TourPage() {
       "2️⃣  TARGET PANORAMA IMAGE ROTATION:",
       targetPanoramaRotation + "°",
     );
-    console.log("3️⃣  VIDEO ROTATION:", videoYawOffset + "°");
+    console.log("3️⃣  VIDEO QUEUE:", resolvedQueue.length, "video(s)");
+    if (resolvedQueue.length > 0) {
+      resolvedQueue.forEach((v, i) => console.log(`    Video ${i + 1}: yaw=${v.yawOffset}°`));
+    }
     console.log("═══════════════════════════════════════════════\n");
 
-    if (resolvedUrl) {
-      // Video transition: preserve camera, rotate video sphere
+    if (resolvedQueue.length > 0) {
+      // Video transition: preserve camera, set up queue
       setPreservedCameraYaw(currentCameraYaw);
       setPreservedCameraPitch(currentCameraPitch);
-      setVideoTextureYawOffset(videoYawOffset);
-      setActiveVideoUrl(resolvedUrl);
+      // Set the first video's yaw offset (subsequent ones update via useEffect)
+      setVideoTextureYawOffset(resolvedQueue[0].yawOffset);
+      setActiveVideoUrl(resolvedQueue[0].videoUrl);
       setSpotHasVideo(true);
-      navigateTo(targetNodeId, resolvedUrl, playMode);
+      navigateTo(targetNodeId, resolvedQueue[0].videoUrl, playMode, resolvedQueue);
     } else {
       console.log(
         "🚀 No video transition: cross-fade to target node, preserving camera",
-        resolvedUrl,
       );
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
@@ -261,6 +302,7 @@ export default function TourPage() {
         onVideoFadeComplete={handleVideoFadeComplete}
         videoTextureYawOffset={videoTextureYawOffset}
         spotHasVideo={spotHasVideo}
+        videoQueueIndex={videoQueueIndex}
       />
 
       {/* ── Navigation Sidebar ── */}

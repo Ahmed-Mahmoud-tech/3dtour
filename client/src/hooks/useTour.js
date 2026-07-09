@@ -11,6 +11,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
  *  - Project data fetching
  *  - Active node (current panorama)
  *  - Transition lifecycle (preload → play → complete)
+ *  - Sequential multi-video queue playback
  *  - Audio state
  *  - UI visibility (hotspots/signs hidden during transitions)
  *  - Smart preloading (initial 5 nodes, then background loading by proximity)
@@ -29,6 +30,12 @@ export function useTour(projectId) {
   const [transition, setTransition] = useState(null); // { videoUrl, playMode, targetNodeId }
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [hotspotVisible, setHotspotVisible] = useState(true);
+
+  // ─── Multi-video queue ─────────────────────────────────────────────────────
+  // videoQueue: array of { videoUrl, yawOffset } sorted by order
+  // videoQueueIndex: index of the currently playing video in the queue
+  const [videoQueue, setVideoQueue] = useState([]);
+  const [videoQueueIndex, setVideoQueueIndex] = useState(0);
 
   // Audio
   const [audioMuted, setAudioMuted] = useState(false);
@@ -114,28 +121,42 @@ export function useTour(projectId) {
 
   // ─── Navigation ────────────────────────────────────────────────────────────
   /**
-   * Navigate to a new node, optionally via a transition video.
+   * Navigate to a new node, optionally via a transition video or video queue.
    * @param {string} targetNodeId
-   * @param {string} [transitionId]
+   * @param {string} [videoUrl]           - Single video URL (legacy / first video)
    * @param {'forward'|'backward'} [playMode='forward']
+   * @param {{ videoUrl: string, yawOffset: number }[]} [queue=[]] - Multi-video queue
    */
   const navigateTo = useCallback(
-    (targetNodeId, videoUrl, playMode = "forward") => {
+    (targetNodeId, videoUrl, playMode = "forward", queue = []) => {
       if (!project) return;
       if (targetNodeId === activeNodeId) return;
-      if (videoUrl) {
+
+      if (queue.length > 0) {
+        // Multi-video queue: start playing the first video
+        console.log(`🎬 Starting video queue with ${queue.length} video(s)`);
+        setVideoQueue(queue);
+        setVideoQueueIndex(0);
+        setTransition({
+          videoUrl: queue[0].videoUrl,
+          playMode,
+          targetNodeId,
+        });
+        setIsTransitioning(true);
+        setHotspotVisible(false);
+      } else if (videoUrl) {
         console.log("2222");
-        // Change node immediately so new panorama loads underneath video
-        // setTimeout(() => {
-        // setActiveNodeId(targetNodeId);
-        // }, 600);
-        // Overwrite any existing transition — VideoSphere will restart with the new URL
+        // Single video (legacy path)
+        setVideoQueue([]);
+        setVideoQueueIndex(0);
         setTransition({ videoUrl, playMode, targetNodeId });
         setIsTransitioning(true);
-        setHotspotVisible(false); // hide hotspots/signs while video plays
+        setHotspotVisible(false);
       } else {
         console.log("5555");
         // No transition video — jump directly (caller handles fade overlay)
+        setVideoQueue([]);
+        setVideoQueueIndex(0);
         setTransition(null);
         setIsTransitioning(false);
         setActiveNodeId(targetNodeId);
@@ -149,18 +170,40 @@ export function useTour(projectId) {
     setTransition(null);
     setIsTransitioning(false);
     setHotspotVisible(true);
+    setVideoQueue([]);
+    setVideoQueueIndex(0);
   }, []);
 
-  /** Called by VideoSphere when video finishes */
+  /**
+   * Called by VideoSphere when the current video finishes.
+   * If there are more videos in the queue, advance to the next one.
+   * Otherwise, complete the transition.
+   */
   const onTransitionComplete = useCallback(() => {
     if (!transition) return;
-    // Node was already changed when video started, just cleanup transition state
-    // setActiveNodeId(transition.targetNodeId);
-    setTransition(null);
-    setIsTransitioning(false);
-    setHotspotVisible(true);
-    setActiveNodeId(transition.targetNodeId);
-  }, [transition]);
+
+    const nextIndex = videoQueueIndex + 1;
+
+    if (videoQueue.length > 0 && nextIndex < videoQueue.length) {
+      // More videos in the queue — advance to the next one
+      console.log(`🎬 Video ${videoQueueIndex + 1}/${videoQueue.length} done, advancing to video ${nextIndex + 1}`);
+      setVideoQueueIndex(nextIndex);
+      setTransition((prev) => ({
+        ...prev,
+        videoUrl: videoQueue[nextIndex].videoUrl,
+      }));
+    } else {
+      // All videos played — complete the transition
+      console.log(`🎬 All ${videoQueue.length || 1} video(s) finished, completing transition`);
+      const targetNodeId = transition.targetNodeId;
+      setTransition(null);
+      setIsTransitioning(false);
+      setHotspotVisible(true);
+      setActiveNodeId(targetNodeId);
+      setVideoQueue([]);
+      setVideoQueueIndex(0);
+    }
+  }, [transition, videoQueue, videoQueueIndex]);
 
   const activeNode = project?.nodes?.[activeNodeId] || null;
 
@@ -180,5 +223,8 @@ export function useTour(projectId) {
     onTransitionComplete,
     setActiveNodeId,
     preloadNextAssets, // Expose for hover preloading
+    // Multi-video queue state
+    videoQueue,
+    videoQueueIndex,
   };
 }

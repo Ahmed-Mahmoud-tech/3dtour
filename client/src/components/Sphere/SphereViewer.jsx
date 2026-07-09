@@ -530,6 +530,7 @@ function Scene({
   panoramaOpacity,
   previousPanoramaOpacity,
   onPreviousFadeComplete,
+  videoQueueIndex,
 }) {
   return (
     <>
@@ -571,8 +572,10 @@ function Scene({
         useBackground={!transitionVideoUrl && !previousNode}
       />
       {/* Video sphere - rotated by video's yawOffset */}
+      {/* Video sphere - keyed by queueIndex to force re-mount between sequential videos */}
       {transitionVideoUrl && (
         <VideoSphere
+          key={`video-${videoQueueIndex ?? 0}-${transitionVideoUrl}`}
           videoUrl={transitionVideoUrl}
           onEnded={onTransitionComplete}
           onFadeComplete={onVideoFadeComplete}
@@ -623,6 +626,7 @@ export default function SphereViewer({
   onVideoFadeComplete,
   videoTextureYawOffset,
   spotHasVideo,
+  videoQueueIndex,
 }) {
   const [previousNode, setPreviousNode] = useState(null);
   const [panoramaOpacity, setPanoramaOpacity] = useState(1);
@@ -770,6 +774,7 @@ export default function SphereViewer({
         panoramaOpacity={panoramaOpacity}
         previousPanoramaOpacity={previousPanoramaOpacity}
         onPreviousFadeComplete={handlePreviousFadeComplete}
+        videoQueueIndex={videoQueueIndex}
       />
     </Canvas>
   );
