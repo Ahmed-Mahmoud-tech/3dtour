@@ -1,4 +1,11 @@
-import { useRef, useEffect, useCallback, useState, Suspense } from "react";
+import {
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useState,
+  Suspense,
+} from "react";
 import { Canvas, useThree, useFrame, invalidate } from "@react-three/fiber";
 import { useTexture, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -14,18 +21,23 @@ const SPHERE_RADIUS = 50;
 function PanoramaSphere({
   panoramaUrl,
   opacity = 1,
+  // Starting opacity on mount. 0 = fade in from transparent (default);
+  // 1 = appear fully opaque immediately (used for the "previous" panorama
+  // that must sit behind the incoming one from the very first frame).
+  initialOpacity = 0,
   onFadeComplete,
+  onFadeInComplete,
   yawOffset = 0,
   useBackground = true,
   customSphere = SPHERE_RADIUS,
 }) {
   const texture = useTexture(panoramaUrl);
   const { gl, scene } = useThree();
-  // const opacityRef = useRef(opacity);
-  const opacityRef = useRef(0);
+  const opacityRef = useRef(initialOpacity);
   const matRef = useRef();
   const meshRef = useRef();
   const onFadeCompleteRef = useRef(onFadeComplete);
+  const onFadeInCompleteRef = useRef(onFadeInComplete);
   const [textureReady, setTextureReady] = useState(false);
 
   // Tracks whether the fade to the current target has already finished,
@@ -35,6 +47,7 @@ function PanoramaSphere({
 
   useEffect(() => {
     onFadeCompleteRef.current = onFadeComplete;
+    onFadeInCompleteRef.current = onFadeInComplete;
   });
 
   // Whenever the target opacity changes, there's new work to do — reset the
@@ -61,12 +74,6 @@ function PanoramaSphere({
 
     const target = opacity;
     const current = opacityRef.current;
-    console.log(
-      "dddddddddddddddddd22233333",
-      current,
-      target,
-      Math.abs(current - target) > 0.001,
-    );
     if (matRef.current && textureReady) {
       if (Math.abs(current - target) > 0.001) {
         // Smooth fade: ~1 second at 60fps using lerp factor 0.05 for slower, smoother transition
@@ -79,6 +86,8 @@ function PanoramaSphere({
         matRef.current.opacity = target;
         if (target === 0 && onFadeCompleteRef.current) {
           onFadeCompleteRef.current();
+        } else if (target === 1 && onFadeInCompleteRef.current) {
+          onFadeInCompleteRef.current();
         }
         // Fade to this target is finished — no more work until opacity changes again.
         doneRef.current = true;
@@ -89,7 +98,11 @@ function PanoramaSphere({
     }
   });
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect): for an already-cached texture this whole
+  // setup — including setTextureReady(true) — runs synchronously BEFORE the
+  // browser paints, so a cross-fade never paints a frame where the previous
+  // panorama hasn't appeared yet (which would flash the un-rotated background).
+  useLayoutEffect(() => {
     const loadTexture = async () => {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.wrapS = THREE.RepeatWrapping;
@@ -355,7 +368,6 @@ function VideoSphere({
   // updates); the moment fade-out finishes we stop invalidating and the
   // loop goes fully idle — no more useFrame calls until something new happens.
   useFrame(() => {
-    console.log("dddddddddddddddddd");
     if (doneRef.current) return;
 
     if (texture) texture.needsUpdate = true;
@@ -528,8 +540,7 @@ function Scene({
   onVideoFadeComplete,
   videoTextureYawOffset,
   panoramaOpacity,
-  previousPanoramaOpacity,
-  onPreviousFadeComplete,
+  onPanoramaFadeInComplete,
   videoQueueIndex,
 }) {
   return (
@@ -540,16 +551,23 @@ function Scene({
         onYawChange={onYawChange}
         onPitchChange={onPitchChange}
       />
-      {/* Previous panorama - stays at full opacity, renders as mesh (not background) */}
-      {/* {previousNode && previousPanoramaOpacity > 0 && (
-        <PanoramaSphere
-          panoramaUrl={previousNode.panoramaUrl}
-          opacity={previousPanoramaOpacity}
-          onFadeComplete={onPreviousFadeComplete}
-          yawOffset={previousNode.initialYawOffset || 0}
-          useBackground={false}
-        />
-      )} */}
+      {/* Previous panorama during a NO-VIDEO cross-fade: stays fully opaque
+          behind the incoming sphere, rotated by its OWN initialYawOffset, so
+          the fade goes old-image(correct rotation) → new-image(correct
+          rotation) instead of exposing the un-rotated scene background.
+          Slightly larger radius so the incoming sphere renders in front. */}
+      {previousNode && (
+        <Suspense fallback={null} key={`prev-${previousNode.id}`}>
+          <PanoramaSphere
+            panoramaUrl={previousNode.panoramaUrl}
+            opacity={1}
+            initialOpacity={1}
+            yawOffset={previousNode.initialYawOffset || 0}
+            useBackground={false}
+            customSphere={SPHERE_RADIUS + 0.05}
+          />
+        </Suspense>
+      )}
       {/* Backdrop panoramas rendered behind the video during transition.
           Keyed by NODE ID: when the queue advances, the waypoint node that was
           the previous clip's END becomes the next clip's START — the same key
@@ -571,6 +589,7 @@ function Scene({
         key={node.id}
         panoramaUrl={node.panoramaUrl}
         opacity={panoramaOpacity}
+        onFadeInComplete={onPanoramaFadeInComplete}
         yawOffset={node.initialYawOffset || 0}
         useBackground={!transitionVideoUrl && !previousNode}
       />
@@ -631,16 +650,35 @@ export default function SphereViewer({
   spotHasVideo,
   videoQueueIndex,
 }) {
+  const [displayedNode, setDisplayedNode] = useState(node);
   const [previousNode, setPreviousNode] = useState(null);
   const [panoramaOpacity, setPanoramaOpacity] = useState(1);
-  const [previousPanoramaOpacity, setPreviousPanoramaOpacity] = useState(0);
-  const fadeOutTimeoutRef = useRef(null);
-  const nodeIdRef = useRef(node?.id);
-  const nodeDataRef = useRef({
-    panoramaUrl: node?.panoramaUrl,
-    initialYawOffset: node?.initialYawOffset,
-  });
   const prevVideoUrlRef = useRef(transitionVideoUrl);
+
+  // ─── Node-change detection DURING RENDER (React "derived state" pattern) ───
+  // Setting state here makes React re-render immediately BEFORE committing, so
+  // there is never a painted frame where the new node is mounted but the
+  // previous panorama isn't — the frame that used to flash the un-rotated
+  // scene background. Applies only to NO-VIDEO navigation (hotspot without a
+  // transition video, or sidebar jump): the old panorama is kept fully opaque
+  // behind while the new sphere (fresh mount, key=node.id, opacity 0 → 1)
+  // fades in on top. Video transitions are unchanged — the backdrop system
+  // handles those.
+  if (node && node !== displayedNode) {
+    if (displayedNode && node.id !== displayedNode.id) {
+      if (!spotHasVideo && !transitionVideoUrl) {
+        setPreviousNode({
+          id: displayedNode.id,
+          panoramaUrl: displayedNode.panoramaUrl,
+          initialYawOffset: displayedNode.initialYawOffset,
+        });
+        setPanoramaOpacity(1);
+      } else {
+        setPreviousNode(null);
+      }
+    }
+    setDisplayedNode(node);
+  }
 
   // Handle video transitions: hide current panorama when video starts
   useEffect(() => {
@@ -650,11 +688,8 @@ export default function SphereViewer({
     if (hasVideo) {
       // Video is starting, hide current panorama (target node is shown behind video)
       setPanoramaOpacity(0);
-      setPreviousPanoramaOpacity(0);
       // Clean up previous node since we're transitioning
-      if (previousNode) {
-        setPreviousNode(null);
-      }
+      setPreviousNode(null);
     } else if (hadVideo && !hasVideo) {
       // Video just finished - target node is now the active node, show it
       setPanoramaOpacity(1);
@@ -663,78 +698,9 @@ export default function SphereViewer({
     prevVideoUrlRef.current = transitionVideoUrl;
   }, [transitionVideoUrl]);
 
-  // Detect node change and trigger cross-fade (only for non-video transitions)
-  useEffect(() => {
-    if (node && nodeIdRef.current !== node.id) {
-      const hasVideo = transitionVideoUrl;
-
-      // Only set up cross-fade if there's NO video transition
-      if (!spotHasVideo) {
-        // Store previous node data including yawOffset for proper rotation during fade
-        setPreviousNode({
-          id: nodeIdRef.current,
-          panoramaUrl: nodeDataRef.current.panoramaUrl,
-          initialYawOffset: nodeDataRef.current.initialYawOffset,
-        });
-        // Keep old panorama at full opacity (no fade out needed)
-        setPreviousPanoramaOpacity(1);
-        console.log(
-          spotHasVideo,
-          "🌀 CROSS-FADE: Node changed fromaaaaaaaaaaaaa",
-          nodeIdRef.current,
-          "to",
-          node.id,
-        );
-        setPanoramaOpacity(0);
-      }
-
-      nodeIdRef.current = node.id;
-      nodeDataRef.current = {
-        panoramaUrl: node.panoramaUrl,
-        initialYawOffset: node.initialYawOffset,
-      };
-
-      // Clear any pending fade-out timeout
-      if (fadeOutTimeoutRef.current) {
-        clearTimeout(fadeOutTimeoutRef.current);
-      }
-
-      // Only trigger cross-fade animation if there's no video
-      if (!hasVideo) {
-        // Start fading in the new panorama immediately (it will render in front)
-        requestAnimationFrame(() => {
-          setPanoramaOpacity(1);
-        });
-        // Remove old panorama after new one is fully visible (600ms)
-        // fadeOutTimeoutRef.current = setTimeout(() => {
-        setPreviousNode(null);
-        // }, 0);
-        // }, 600);
-      }
-    } else if (node && !previousNode) {
-      // First load
-      nodeIdRef.current = node?.id;
-      nodeDataRef.current = {
-        panoramaUrl: node?.panoramaUrl,
-        initialYawOffset: node?.initialYawOffset,
-      };
-      setPanoramaOpacity(1);
-    }
-    // }, [transitionVideoUrl]);
-  }, [node?.id, transitionVideoUrl]);
-
-  const handlePreviousFadeComplete = useCallback(() => {
-    // This callback is no longer needed since we remove the node directly
-    // but kept for compatibility
-  }, []);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (fadeOutTimeoutRef.current) {
-        clearTimeout(fadeOutTimeoutRef.current);
-      }
-    };
+  // The incoming panorama has fully faded in — the old one underneath can go.
+  const handleFadeInComplete = useCallback(() => {
+    setPreviousNode(null);
   }, []);
 
   if (!node) return null;
@@ -775,8 +741,7 @@ export default function SphereViewer({
         onVideoFadeComplete={onVideoFadeComplete}
         videoTextureYawOffset={videoTextureYawOffset}
         panoramaOpacity={panoramaOpacity}
-        previousPanoramaOpacity={previousPanoramaOpacity}
-        onPreviousFadeComplete={handlePreviousFadeComplete}
+        onPanoramaFadeInComplete={handleFadeInComplete}
         videoQueueIndex={videoQueueIndex}
       />
     </Canvas>
