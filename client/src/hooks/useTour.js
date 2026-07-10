@@ -185,8 +185,15 @@ export function useTour(projectId) {
     const nextIndex = videoQueueIndex + 1;
 
     if (videoQueue.length > 0 && nextIndex < videoQueue.length) {
-      // More videos in the queue — advance to the next one
-      console.log(`🎬 Video ${videoQueueIndex + 1}/${videoQueue.length} done, advancing to video ${nextIndex + 1}`);
+      // More videos in the queue — arrive at the intermediate waypoint (the
+      // node the NEXT clip departs from), then advance to that next clip.
+      // This makes a chain visibly step 0 → 1 → 2 instead of appearing to jump
+      // straight to the final target.
+      const waypointNodeId = videoQueue[nextIndex].startNodeId;
+      console.log(`🎬 Video ${videoQueueIndex + 1}/${videoQueue.length} done, arriving at waypoint ${waypointNodeId || "(none)"}, advancing to video ${nextIndex + 1}`);
+      if (waypointNodeId && project?.nodes?.[waypointNodeId]) {
+        setActiveNodeId(waypointNodeId);
+      }
       setVideoQueueIndex(nextIndex);
       setTransition((prev) => ({
         ...prev,
@@ -203,7 +210,7 @@ export function useTour(projectId) {
       setVideoQueue([]);
       setVideoQueueIndex(0);
     }
-  }, [transition, videoQueue, videoQueueIndex]);
+  }, [transition, videoQueue, videoQueueIndex, project]);
 
   const activeNode = project?.nodes?.[activeNodeId] || null;
 

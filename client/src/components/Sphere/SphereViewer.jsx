@@ -515,7 +515,7 @@ function VideoSphere({
 function Scene({
   node,
   previousNode,
-  targetNodeForVideo,
+  transitionBackdrops,
   hotspotVisible,
   onNavigate,
   onSignClick,
@@ -550,19 +550,22 @@ function Scene({
           useBackground={false}
         />
       )} */}
-      {/* Target node panorama - rendered behind the video during transition */}
-      {targetNodeForVideo && transitionVideoUrl && (
-        <Suspense fallback={null}>
+      {/* Backdrop panoramas rendered behind the video during transition.
+          Keyed by NODE ID: when the queue advances, the waypoint node that was
+          the previous clip's END becomes the next clip's START — the same key
+          means React reuses the sphere instance, so it stays fully opaque and
+          the gap between clips shows the waypoint, not a stale panorama. */}
+      {transitionBackdrops?.map(({ node: backdropNode, radiusOffset }) => (
+        <Suspense fallback={null} key={`backdrop-${backdropNode.id}`}>
           <PanoramaSphere
-            key={`target-${targetNodeForVideo.id}`}
-            panoramaUrl={targetNodeForVideo.panoramaUrl}
+            panoramaUrl={backdropNode.panoramaUrl}
             opacity={1}
-            yawOffset={targetNodeForVideo.initialYawOffset || 0}
+            yawOffset={backdropNode.initialYawOffset || 0}
             useBackground={false}
-            customSphere={SPHERE_RADIUS + 0.05}
+            customSphere={SPHERE_RADIUS + radiusOffset}
           />
         </Suspense>
-      )}
+      ))}
       {/* Current panorama - fades in on top as mesh during transition */}
       <PanoramaSphere
         key={node.id}
@@ -613,7 +616,7 @@ function Scene({
  */
 export default function SphereViewer({
   node,
-  targetNodeForVideo,
+  transitionBackdrops,
   hotspotVisible,
   onNavigate,
   onSignClick,
@@ -759,7 +762,7 @@ export default function SphereViewer({
       <Scene
         node={node}
         previousNode={previousNode}
-        targetNodeForVideo={targetNodeForVideo}
+        transitionBackdrops={transitionBackdrops}
         hotspotVisible={hotspotVisible}
         onNavigate={onNavigate}
         onSignClick={onSignClick}

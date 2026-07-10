@@ -43,6 +43,8 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
           yawOffset: v.yawOffset ?? 0,
           order: i,
           transitionId: v.transitionId || '',
+          // The node this segment departs from (first hop defaults to the source node).
+          startNodeId: v.startNodeId || (i === 0 ? sourceNodeId : ''),
           file: null, // no new file selected yet
         }));
     }
@@ -55,6 +57,7 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
         yawOffset: initialData?.videoInitialYawOffset ?? 0,
         order: 0,
         transitionId: initialData?.transitionId || '',
+        startNodeId: sourceNodeId || '',
         file: null,
       }];
     }
@@ -64,6 +67,8 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
   const [videoEntries, setVideoEntries] = useState(buildInitialVideos);
 
   const nodeOptions = Object.values(nodes || {}).filter((n) => n.id !== sourceNodeId);
+  // Start-point picker lists every node (a chain hop can depart from any node, including the source).
+  const allNodeOptions = Object.values(nodes || {});
 
   // ─── Video list helpers ────────────────────────────────────────────────────
   const addVideoEntry = () => {
@@ -74,6 +79,8 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
       yawOffset: 0,
       order: prev.length,
       transitionId: '',
+      // First hop departs from the source node; add later hops with their own start point.
+      startNodeId: prev.length === 0 ? (sourceNodeId || '') : '',
       file: null,
     }]);
   };
@@ -123,6 +130,7 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
             yawOffset: parseFloat(entry.yawOffset) || 0,
             order: entry.order,
             transitionId: transId,
+            startNodeId: entry.startNodeId || '',
           });
         }
       }
@@ -279,6 +287,21 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
                       {entry.file.name} — Reversed copy will be auto-generated.
                     </p>
                   )}
+
+                  {/* Start point — the node this segment departs from */}
+                  <div>
+                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Start Point (departs from)</label>
+                    <select
+                      className="admin-input mt-0.5"
+                      value={entry.startNodeId || ''}
+                      onChange={(e) => updateVideoEntry(entry.id, 'startNodeId', e.target.value)}
+                    >
+                      <option value="">— Select start node —</option>
+                      {allNodeOptions.map((n) => (
+                        <option key={n.id} value={n.id}>{n.displayName}</option>
+                      ))}
+                    </select>
+                  </div>
 
                   {/* Yaw offset */}
                   <div>

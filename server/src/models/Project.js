@@ -25,6 +25,10 @@ const TransitionVideoItemSchema = new mongoose.Schema(
     yawOffset: { type: Number, default: 0 },
     order: { type: Number, default: 0 },
     transitionId: { type: String, default: "" },
+    // The node this segment departs FROM (for multi-hop chains). The segment's
+    // destination is the next video's startNodeId, or the hotspot's targetNodeId
+    // for the last video in the chain.
+    startNodeId: { type: String, default: "" },
   },
   { _id: false },
 );

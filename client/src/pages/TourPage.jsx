@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useTour } from "../hooks/useTour.js";
 // import { usePreloader } from "../hooks/usePreloader.js";
@@ -21,11 +21,10 @@ export default function TourPage() {
   const [preservedCameraYaw, setPreservedCameraYaw] = useState(null); // radians - preserves user's view
   const [preservedCameraPitch, setPreservedCameraPitch] = useState(null); // radians - preserves vertical scroll
 
-  // ─── Video texture yaw for rotation ─────────────────────────────────────────
-  const [videoTextureYawOffset, setVideoTextureYawOffset] = useState(null);
-
-  // ─── Active video URL (managed separately to control video lifecycle) ──────
-  const [activeVideoUrl, setActiveVideoUrl] = useState(null);
+  // ─── Active video / yaw are DERIVED from the queue (see below), so the URL
+  //     and queue index always change in the same render. Keeping them as
+  //     separate lagging state caused an intermediate mismatched render that
+  //     remounted VideoSphere and replayed a clip. ──────────────────────────
   const [spotHasVideo, setSpotHasVideo] = useState(false);
 
   // ─── Render state for pre-rendering assets ───────────────────────────────────
@@ -54,25 +53,69 @@ export default function TourPage() {
     videoQueueIndex,
   } = useTour(projectId);
 
-  // ─── Compute target node for video transition (to show behind the video) ──
-  const targetNodeForVideo = useMemo(() => {
-    if (!transition?.targetNodeId || !project?.nodes) return null;
-    return project.nodes[transition.targetNodeId] || null;
-  }, [transition?.targetNodeId, project?.nodes]);
+  // ─── Current video segment — DERIVED synchronously from the queue ──────────
+  // The URL, yaw and queue index therefore always update together in the same
+  // render. (Previously activeVideoUrl lagged one render behind videoQueueIndex,
+  // producing a mismatched VideoSphere key that remounted and replayed a clip.)
+  const activeVideoSegment =
+    transition && videoQueue.length > 0
+      ? videoQueue[videoQueueIndex] || null
+      : null;
+  const activeVideoUrl = activeVideoSegment?.videoUrl ?? null;
+  const videoTextureYawOffset = activeVideoSegment
+    ? activeVideoSegment.yawOffset ?? 0
+    : null;
 
-  // ─── Sync activeVideoUrl and videoTextureYawOffset when videoQueueIndex changes ──
-  useEffect(() => {
-    if (videoQueue.length > 0 && videoQueueIndex < videoQueue.length && transition) {
-      const currentVideo = videoQueue[videoQueueIndex];
-      setActiveVideoUrl(currentVideo.videoUrl);
-      setVideoTextureYawOffset(currentVideo.yawOffset ?? 0);
-      console.log(
-        `🎬 Playing video ${videoQueueIndex + 1}/${videoQueue.length}`,
-        `URL: ${currentVideo.videoUrl.split("/").pop()}`,
-        `Yaw: ${currentVideo.yawOffset}°`
-      );
+  // ─── Backdrop panoramas rendered behind the currently-playing clip ────────
+  // Two spheres per segment, keyed by NODE ID so React reuses them across
+  // queue advances:
+  //  - START node (outer): the point this clip departs from. When the queue
+  //    advances, this is the SAME node that just finished fading in as the
+  //    previous clip's end — same key ⇒ the sphere instance is reused and
+  //    stays fully opaque, so the gap between clips shows the waypoint
+  //    (point 2), never the origin or the final target.
+  //  - END node (inner): where this clip arrives — the NEXT clip's start
+  //    point, or the hotspot's target for the last clip. It fades in under
+  //    the playing video so it's opaque by the time the clip ends.
+  const lastArrivalBackdropRef = useRef(null);
+  const transitionBackdrops = useMemo(() => {
+    if (!project?.nodes) return [];
+    if (!transition?.targetNodeId) {
+      // Transition finished: keep the arrival panorama mounted while we're
+      // still on the node we arrived at, so the active sphere fades in over
+      // IDENTICAL imagery instead of over a stale scene background.
+      const kept = lastArrivalBackdropRef.current;
+      return kept && kept.node.id === activeNodeId ? [kept] : [];
     }
-  }, [videoQueue, videoQueueIndex, transition]);
+    if (videoQueue.length === 0) {
+      const t = project.nodes[transition.targetNodeId];
+      if (!t) return [];
+      lastArrivalBackdropRef.current = { node: t, radiusOffset: 0.05 };
+      return [lastArrivalBackdropRef.current];
+    }
+    const startId = videoQueue[videoQueueIndex]?.startNodeId;
+    const startNode =
+      project.nodes[startId] || project.nodes[activeNodeId] || null;
+    const endId =
+      videoQueue[videoQueueIndex + 1]?.startNodeId || transition.targetNodeId;
+    const endNode =
+      project.nodes[endId] || project.nodes[transition.targetNodeId] || null;
+
+    const backdrops = [];
+    if (startNode) backdrops.push({ node: startNode, radiusOffset: 0.1 });
+    if (endNode && endNode.id !== startNode?.id) {
+      const end = { node: endNode, radiusOffset: 0.05 };
+      lastArrivalBackdropRef.current = end;
+      backdrops.push(end);
+    }
+    return backdrops;
+  }, [
+    transition?.targetNodeId,
+    project?.nodes,
+    videoQueue,
+    videoQueueIndex,
+    activeNodeId,
+  ]);
 
   // ─── Preload next assets when hovering / navigating ──────────────────────
   const handleNavigate = async (
@@ -101,6 +144,7 @@ export default function TourPage() {
           ? (v.reverseVideoUrl || v.videoUrl)
           : v.videoUrl,
         yawOffset: v.yawOffset ?? 0,
+        startNodeId: v.startNodeId || "",
       })).filter((v) => v.videoUrl);
     } else {
       // Legacy single-video path
@@ -139,12 +183,30 @@ export default function TourPage() {
       }
     }
 
-    const firstVideoUrl = resolvedQueue.length > 0 ? resolvedQueue[0].videoUrl : null;
-    const transitionData = firstVideoUrl ? { videoUrl: firstVideoUrl } : null;
+    // The destination node of segment i is the NEXT segment's start point,
+    // or the hotspot's final target for the last segment.
+    const segmentEndNode = (i) => {
+      const endNodeId = resolvedQueue[i + 1]?.startNodeId || targetNodeId;
+      return project.nodes?.[endNodeId] || targetNode;
+    };
 
-    // Pre-render assets and show pre-rendering indicator
+    // Pre-render assets. Await the FIRST hop so playback starts promptly, then
+    // preload every remaining clip + waypoint panorama in the background so the
+    // chain plays through without stalling between hops.
     try {
-      await preloadNextAssets(targetNode, transitionData);
+      if (resolvedQueue.length > 0) {
+        await preloadNextAssets(segmentEndNode(0), {
+          videoUrl: resolvedQueue[0].videoUrl,
+        });
+        resolvedQueue.slice(1).forEach((seg, idx) => {
+          const i = idx + 1;
+          preloadNextAssets(segmentEndNode(i), { videoUrl: seg.videoUrl }).catch(
+            () => {},
+          );
+        });
+      } else {
+        await preloadNextAssets(targetNode, null);
+      }
     } catch (error) {
       console.error("Pre-render failed:", error);
     } finally {
@@ -180,12 +242,11 @@ export default function TourPage() {
     console.log("═══════════════════════════════════════════════\n");
 
     if (resolvedQueue.length > 0) {
-      // Video transition: preserve camera, set up queue
+      // Video transition: preserve camera, set up queue.
+      // activeVideoUrl / videoTextureYawOffset are derived from the queue, so
+      // there's nothing extra to set here — navigateTo populates the queue.
       setPreservedCameraYaw(currentCameraYaw);
       setPreservedCameraPitch(currentCameraPitch);
-      // Set the first video's yaw offset (subsequent ones update via useEffect)
-      setVideoTextureYawOffset(resolvedQueue[0].yawOffset);
-      setActiveVideoUrl(resolvedQueue[0].videoUrl);
       setSpotHasVideo(true);
       navigateTo(targetNodeId, resolvedQueue[0].videoUrl, playMode, resolvedQueue);
     } else {
@@ -195,8 +256,6 @@ export default function TourPage() {
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
       setPreservedCameraPitch(currentCameraPitch);
-      setVideoTextureYawOffset(null);
-      setActiveVideoUrl(null);
       setSpotHasVideo(false);
       cancelTransition();
       setActiveNodeId(targetNodeId);
@@ -212,8 +271,6 @@ export default function TourPage() {
     // Reset camera to 0,0 for sidebar navigation (fresh start)
     // setPreservedCameraYaw(0);
     // setPreservedCameraPitch(0);
-    setVideoTextureYawOffset(null);
-    setActiveVideoUrl(null);
     setSpotHasVideo(false);
 
     const targetNode = project.nodes?.[targetNodeId];
@@ -285,7 +342,7 @@ export default function TourPage() {
       {/* ── 3D Sphere Viewer ── */}
       <SphereViewer
         node={activeNode}
-        targetNodeForVideo={targetNodeForVideo} // Pass target node to show behind video
+        transitionBackdrops={transitionBackdrops} // start/end panoramas shown behind the video
         hotspotVisible={hotspotVisible}
         onNavigate={handleNavigate}
         onSignClick={(content) => setActivePopup(content)}
