@@ -54,11 +54,15 @@ export const getProject = async (req, res) => {
 // POST /api/projects
 export const createProject = async (req, res) => {
   try {
-    const { title, author } = req.body;
+    const { title, author, nadirLogoUrl } = req.body;
     if (!title) return res.status(400).json({ message: "Title is required" });
 
     const project = await Project.create({
-      info: { title, author: author || req.user.name },
+      info: {
+        title,
+        author: author || req.user.name,
+        nadirLogoUrl: nadirLogoUrl || "",
+      },
       createdBy: req.user._id,
     });
     res.status(201).json(project);
@@ -77,7 +81,17 @@ export const updateProject = async (req, res) => {
     if (!project) return res.status(404).json({ message: "Project not found" });
 
     const { info, settings, nodes, transitions } = req.body;
-    if (info) project.info = { ...project.info, ...info };
+    if (info) {
+      // Logo replaced (or cleared) — remove the previous uploaded file
+      if (
+        info.nadirLogoUrl !== undefined &&
+        project.info.nadirLogoUrl &&
+        info.nadirLogoUrl !== project.info.nadirLogoUrl
+      ) {
+        deleteUploadByUrl(project.info.nadirLogoUrl);
+      }
+      project.info = { ...project.info, ...info };
+    }
     if (settings) project.settings = { ...project.settings, ...settings };
     if (nodes) {
       project.nodes = nodes;
@@ -107,9 +121,12 @@ export const deleteProject = async (req, res) => {
     // Collect all uploaded URLs referenced by this project
     const urls = new Set();
 
+    if (project.info?.nadirLogoUrl) urls.add(project.info.nadirLogoUrl);
+
     project.nodes.forEach((node) => {
       if (!node) return;
       if (node.panoramaUrl) urls.add(node.panoramaUrl);
+      if (node.panoramaPreviewUrl) urls.add(node.panoramaPreviewUrl);
       (node.navigationHotspots || []).forEach((hs) => {
         if (hs.transitionVideoUrl) urls.add(hs.transitionVideoUrl);
         if (hs.reverseTransitionVideoUrl) urls.add(hs.reverseTransitionVideoUrl);
@@ -147,7 +164,7 @@ export const addNode = async (req, res) => {
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    const { displayName, panoramaUrl, initialYawOffset } = req.body;
+    const { displayName, panoramaUrl, panoramaPreviewUrl, initialYawOffset } = req.body;
     if (!displayName || !panoramaUrl)
       return res
         .status(400)
@@ -158,6 +175,7 @@ export const addNode = async (req, res) => {
       id,
       displayName,
       panoramaUrl,
+      panoramaPreviewUrl: panoramaPreviewUrl || "",
       initialYawOffset: initialYawOffset || 0,
     };
     project.nodes.set(id, node);
@@ -204,9 +222,10 @@ export const updateNode = async (req, res) => {
         parseFloat(updateData.initialYawOffset) || 0;
     }
 
-    // 2. Remove any replaced uploads (panorama)
+    // 2. Remove any replaced uploads (panorama + its preview)
     if (updateData.panoramaUrl && existing.panoramaUrl && updateData.panoramaUrl !== existing.panoramaUrl) {
       deleteUploadByUrl(existing.panoramaUrl);
+      if (existing.panoramaPreviewUrl) deleteUploadByUrl(existing.panoramaPreviewUrl);
     }
 
     // 3. Merge the plain 'existing' object with the new 'updateData'
@@ -239,6 +258,7 @@ export const deleteNode = async (req, res) => {
     const node = project.nodes.get(nodeId);
     if (node) {
       if (node.panoramaUrl) deleteUploadByUrl(node.panoramaUrl);
+      if (node.panoramaPreviewUrl) deleteUploadByUrl(node.panoramaPreviewUrl);
       (node.navigationHotspots || []).forEach((hs) => {
         if (hs.transitionVideoUrl) deleteUploadByUrl(hs.transitionVideoUrl);
         if (hs.reverseTransitionVideoUrl) deleteUploadByUrl(hs.reverseTransitionVideoUrl);

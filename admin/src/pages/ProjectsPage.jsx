@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-import { projectApi } from '../api/projectApi.js';
-import { FaPlus, FaEdit, FaTrash, FaGlobe, FaSignOutAlt } from 'react-icons/fa';
+import { projectApi, mediaApi } from '../api/projectApi.js';
+import { FaPlus, FaEdit, FaTrash, FaGlobe, FaSignOutAlt, FaSyncAlt } from 'react-icons/fa';
 
 export default function ProjectsPage() {
   const { user, logout } = useAuth();
@@ -10,6 +10,8 @@ export default function ProjectsPage() {
   const [loading, setLoading]   = useState(true);
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [logoFile, setLogoFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -27,14 +29,24 @@ export default function ProjectsPage() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim() || submitting) return;
+    setSubmitting(true);
     try {
-      const project = await projectApi.create({ title: newTitle.trim() });
+      // Upload the client logo first (if provided), then create the project
+      let nadirLogoUrl = '';
+      if (logoFile) {
+        const { url } = await mediaApi.uploadImage(logoFile);
+        nadirLogoUrl = url;
+      }
+      const project = await projectApi.create({ title: newTitle.trim(), nadirLogoUrl });
       setProjects((prev) => [project, ...prev]);
       setNewTitle('');
+      setLogoFile(null);
       setCreating(false);
     } catch (err) {
       console.error(err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -76,18 +88,34 @@ export default function ProjectsPage() {
 
         {/* Create form */}
         {creating && (
-          <form onSubmit={handleCreate} className="admin-card mb-6 flex gap-3">
+          <form onSubmit={handleCreate} className="admin-card mb-6 flex flex-col gap-3">
             <input
               autoFocus
-              className="admin-input flex-1"
+              className="admin-input"
               placeholder="Project title…"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
             />
-            <button type="submit" className="admin-btn-primary">Create</button>
-            <button type="button" onClick={() => setCreating(false)} className="admin-btn-secondary">
-              Cancel
-            </button>
+            <div>
+              <label className="admin-label">
+                Client Logo (shown at the bottom of every sphere — leave empty to use the Gateverse logo)
+              </label>
+              <input
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                className="admin-input text-gray-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-blue-600 file:text-white cursor-pointer"
+                onChange={(e) => setLogoFile(e.target.files[0] || null)}
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="submit" disabled={submitting} className="admin-btn-primary flex items-center gap-2">
+                {submitting && <FaSyncAlt size={12} className="animate-spin" />}
+                Create
+              </button>
+              <button type="button" onClick={() => { setCreating(false); setLogoFile(null); }} className="admin-btn-secondary">
+                Cancel
+              </button>
+            </div>
           </form>
         )}
 

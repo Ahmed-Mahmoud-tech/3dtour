@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useTour } from "../hooks/useTour.js";
 // import { usePreloader } from "../hooks/usePreloader.js";
@@ -32,6 +32,36 @@ export default function TourPage() {
 
   // ─── Black fade overlay (no-video navigation + video-end transition) ──────
   const [fadeOverlay, setFadeOverlay] = useState(false);
+
+  // ─── Fullscreen + first-visit drag hint ────────────────────────────────────
+  const containerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showDragHint, setShowDragHint] = useState(true);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  useEffect(() => {
+    if (!showDragHint) return;
+    const dismiss = () => setShowDragHint(false);
+    window.addEventListener("pointerdown", dismiss, { once: true });
+    const timer = setTimeout(dismiss, 8000);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pointerdown", dismiss);
+    };
+  }, [showDragHint]);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.();
+    }
+  };
   const {
     project,
     activeNode,
@@ -219,27 +249,6 @@ export default function TourPage() {
     // 3. Video Rotation (from videoInitialYawOffset) - rotates the video sphere
     const currentCameraYaw = cameraYawRef.current; // in radians
     const currentCameraPitch = cameraPitchRef.current; // in radians
-    const targetPanoramaRotation = targetNode.initialYawOffset || 0; // in degrees
-
-    console.log("\n═══════════════════════════════════════════════");
-    console.log("🎯 NAVIGATION: 3 INDEPENDENT ROTATIONS");
-    console.log("───────────────────────────────────────────────");
-    console.log(
-      "1️⃣  USER CAMERA DRAG (preserved):",
-      ((currentCameraYaw * 180) / Math.PI).toFixed(2) +
-        "° yaw, " +
-        ((currentCameraPitch * 180) / Math.PI).toFixed(2) +
-        "° pitch",
-    );
-    console.log(
-      "2️⃣  TARGET PANORAMA IMAGE ROTATION:",
-      targetPanoramaRotation + "°",
-    );
-    console.log("3️⃣  VIDEO QUEUE:", resolvedQueue.length, "video(s)");
-    if (resolvedQueue.length > 0) {
-      resolvedQueue.forEach((v, i) => console.log(`    Video ${i + 1}: yaw=${v.yawOffset}°`));
-    }
-    console.log("═══════════════════════════════════════════════\n");
 
     if (resolvedQueue.length > 0) {
       // Video transition: preserve camera, set up queue.
@@ -250,9 +259,6 @@ export default function TourPage() {
       setSpotHasVideo(true);
       navigateTo(targetNodeId, resolvedQueue[0].videoUrl, playMode, resolvedQueue);
     } else {
-      console.log(
-        "🚀 No video transition: cross-fade to target node, preserving camera",
-      );
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);
       setPreservedCameraPitch(currentCameraPitch);
@@ -291,28 +297,13 @@ export default function TourPage() {
   // ─── Transition complete: video ended, clean up ──────────────────────────────
   const handleTransitionComplete = () => {
     // IMPORTANT: Update preserved camera to CURRENT position (includes any dragging during video)
-    const currentCameraAfterVideo = cameraYawRef.current;
-    const currentPitchAfterVideo = cameraPitchRef.current;
-    setPreservedCameraYaw(currentCameraAfterVideo);
-    setPreservedCameraPitch(currentPitchAfterVideo);
-
-    console.log(
-      "🎬 VIDEO FADE STARTED - Node already changed when video started. Camera position:",
-      ((currentCameraAfterVideo * 180) / Math.PI).toFixed(2) +
-        "° yaw, " +
-        ((currentPitchAfterVideo * 180) / Math.PI).toFixed(2) +
-        "° pitch (includes any dragging during video)",
-    );
-
+    setPreservedCameraYaw(cameraYawRef.current);
+    setPreservedCameraPitch(cameraPitchRef.current);
     onTransitionComplete();
   };
 
   // ─── Video fade complete: cleanup transition state ───────────────────────────
-  const handleVideoFadeComplete = () => {
-    // setVideoTextureYawOffset(null);
-    // setActiveVideoUrl(null);
-    console.log("🎬 VIDEO FADE COMPLETE - Cleaning up video");
-  };
+  const handleVideoFadeComplete = () => {};
 
   if (loading) {
     return (
@@ -338,7 +329,10 @@ export default function TourPage() {
   const audioEnabled = Boolean(project?.settings?.globalBackgroundAudio?.src);
 
   return (
-    <div className="relative w-full h-full bg-black no-select overflow-hidden">
+    <div
+      ref={containerRef}
+      className="relative w-full h-full bg-black no-select overflow-hidden"
+    >
       {/* ── 3D Sphere Viewer ── */}
       <SphereViewer
         node={activeNode}
@@ -360,6 +354,7 @@ export default function TourPage() {
         videoTextureYawOffset={videoTextureYawOffset}
         spotHasVideo={spotHasVideo}
         videoQueueIndex={videoQueueIndex}
+        nadirLogoUrl={project?.info?.nadirLogoUrl || ""}
       />
 
       {/* ── Navigation Sidebar ── */}
@@ -402,6 +397,48 @@ export default function TourPage() {
       >
         {activeNode.displayName}
       </div>
+
+      {/* ── Fullscreen toggle ── */}
+      <button
+        onClick={toggleFullscreen}
+        title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+        className="absolute bottom-6 right-6 z-10 w-10 h-10 flex items-center
+                   justify-center rounded-full bg-black/50 backdrop-blur-sm
+                   border border-white/10 text-white/80 hover:text-white
+                   hover:bg-black/70 transition-colors cursor-pointer"
+      >
+        {isFullscreen ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+          </svg>
+        )}
+      </button>
+
+      {/* ── First-visit hint ── */}
+      {showDragHint && (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center
+                     pointer-events-none"
+        >
+          <div
+            className="flex flex-col items-center gap-3 px-6 py-4 rounded-2xl
+                       bg-black/40 backdrop-blur-sm border border-white/10
+                       animate-pulse"
+          >
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.9">
+              <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8" />
+              <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+            </svg>
+            <p className="text-white/90 text-sm font-medium">
+              Drag to look around · scroll to zoom
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Info sign popup (rendered outside Canvas for correct layering) ── */}
       {activePopup && (

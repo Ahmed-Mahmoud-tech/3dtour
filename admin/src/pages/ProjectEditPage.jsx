@@ -31,6 +31,8 @@ export default function ProjectEditPage() {
   const [meta, setMeta] = useState({ title: "", author: "" });
   const [audioFile, setAudioFile] = useState(null);
   const [audioUploading, setAudioUploading] = useState(false);
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // New node form
   const [newNode, setNewNode] = useState({
@@ -96,16 +98,32 @@ export default function ProjectEditPage() {
     }
   };
 
+  // ─── Upload client logo (nadir patch) ───────────────────────────────────
+  // The server deletes the previously uploaded logo file when the URL changes.
+  const handleLogoUpload = async () => {
+    if (!logoFile) return;
+    setLogoUploading(true);
+    try {
+      const { url } = await mediaApi.uploadImage(logoFile);
+      await projectApi.update(projectId, { info: { nadirLogoUrl: url } });
+      await fetchProject();
+      setLogoFile(null);
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   // ─── Add node ───────────────────────────────────────────────────────────
   const handleAddNode = async (e) => {
     e.preventDefault();
     if (!newNode.displayName || !panoramaFile) return;
     setNodeUploading(true);
     try {
-      const { url } = await mediaApi.uploadPanorama(panoramaFile);
+      const { url, previewUrl } = await mediaApi.uploadPanorama(panoramaFile);
       await nodeApi.add(projectId, {
         displayName: newNode.displayName,
         panoramaUrl: url,
+        panoramaPreviewUrl: previewUrl || "",
         initialYawOffset: parseFloat(newNode.initialYawOffset) || 0,
       });
       await fetchProject();
@@ -242,6 +260,51 @@ export default function ProjectEditPage() {
               </button>
             </div>
           </form>
+        </section>
+
+        {/* ── Section: Client Logo (nadir patch) ── */}
+        <section className="admin-card">
+          <h2 className="text-sm font-semibold text-white mb-4">
+            Client Logo
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Shown as a circle at the bottom of every sphere to hide the camera
+            robot. When no logo is set, the viewer shows the Gateverse logo.
+            Uploading a new logo replaces (and deletes) the old one.
+          </p>
+          {project?.info?.nadirLogoUrl && (
+            <div className="flex items-center gap-3 mb-3">
+              <img
+                src={project.info.nadirLogoUrl}
+                alt="Current client logo"
+                className="w-16 h-16 rounded-full object-cover bg-gray-800 border border-gray-700"
+              />
+              <p className="text-xs text-green-400 break-all">
+                Current: {project.info.nadirLogoUrl}
+              </p>
+            </div>
+          )}
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="admin-label">Upload New Logo</label>
+              <input
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                className="admin-input text-gray-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-blue-600 file:text-white cursor-pointer"
+                onChange={(e) => setLogoFile(e.target.files[0] || null)}
+              />
+            </div>
+            <button
+              onClick={handleLogoUpload}
+              disabled={!logoFile || logoUploading}
+              className="admin-btn-primary flex items-center gap-2"
+            >
+              {logoUploading ? (
+                <FaSyncAlt size={12} className="animate-spin" />
+              ) : null}
+              Upload
+            </button>
+          </div>
         </section>
 
         {/* ── Section: Background Audio ── */}

@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"components\\\\LandingView.jsx -> ./GlobeCanvas.jsx\":{\"id\":\"components\\\\LandingView.jsx -> ./GlobeCanvas.jsx\",\"files\":[\"static/chunks/_app-pages-browser_components_GlobeCanvas_jsx.js\"]}}"

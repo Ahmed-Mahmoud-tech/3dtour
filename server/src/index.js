@@ -36,8 +36,15 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve uploaded files as static assets
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Serve uploaded files as static assets. Filenames are timestamp-unique, so
+// they never change content — safe to cache aggressively.
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, '../uploads'), {
+    maxAge: '30d',
+    immutable: true,
+  })
+);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);

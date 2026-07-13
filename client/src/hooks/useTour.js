@@ -134,7 +134,6 @@ export function useTour(projectId) {
 
       if (queue.length > 0) {
         // Multi-video queue: start playing the first video
-        console.log(`🎬 Starting video queue with ${queue.length} video(s)`);
         setVideoQueue(queue);
         setVideoQueueIndex(0);
         setTransition({
@@ -145,7 +144,6 @@ export function useTour(projectId) {
         setIsTransitioning(true);
         setHotspotVisible(false);
       } else if (videoUrl) {
-        console.log("2222");
         // Single video (legacy path)
         setVideoQueue([]);
         setVideoQueueIndex(0);
@@ -153,7 +151,6 @@ export function useTour(projectId) {
         setIsTransitioning(true);
         setHotspotVisible(false);
       } else {
-        console.log("5555");
         // No transition video — jump directly (caller handles fade overlay)
         setVideoQueue([]);
         setVideoQueueIndex(0);
@@ -162,7 +159,7 @@ export function useTour(projectId) {
         setActiveNodeId(targetNodeId);
       }
     },
-    [project],
+    [project, activeNodeId],
   );
 
   /** Cancel an in-progress video transition without changing the active node */
@@ -190,7 +187,6 @@ export function useTour(projectId) {
       // This makes a chain visibly step 0 → 1 → 2 instead of appearing to jump
       // straight to the final target.
       const waypointNodeId = videoQueue[nextIndex].startNodeId;
-      console.log(`🎬 Video ${videoQueueIndex + 1}/${videoQueue.length} done, arriving at waypoint ${waypointNodeId || "(none)"}, advancing to video ${nextIndex + 1}`);
       if (waypointNodeId && project?.nodes?.[waypointNodeId]) {
         setActiveNodeId(waypointNodeId);
       }
@@ -201,7 +197,6 @@ export function useTour(projectId) {
       }));
     } else {
       // All videos played — complete the transition
-      console.log(`🎬 All ${videoQueue.length || 1} video(s) finished, completing transition`);
       const targetNodeId = transition.targetNodeId;
       setTransition(null);
       setIsTransitioning(false);

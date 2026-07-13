@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FaBars, FaTimes, FaVolumeUp, FaVolumeMute, FaMapMarkerAlt } from 'react-icons/fa';
+import { MenuIcon, CloseIcon, VolumeUpIcon, VolumeMuteIcon, MapMarkerIcon } from '../icons.jsx';
 
 /**
  * NavigationSidebar
@@ -38,7 +38,7 @@ export default function NavigationSidebar({
                    text-white hover:bg-black/70 transition-colors"
         aria-label="Toggle navigation menu"
       >
-        {open ? <FaTimes size={18} /> : <FaBars size={18} />}
+        {open ? <CloseIcon size={18} /> : <MenuIcon size={18} />}
       </button>
 
       {/* Sidebar panel */}
@@ -68,10 +68,20 @@ export default function NavigationSidebar({
                           hover:bg-white/10 transition-colors
                           ${node.id === activeNodeId ? 'bg-white/15 text-white' : 'text-gray-300'}`}
             >
-              <FaMapMarkerAlt
-                size={14}
-                className={node.id === activeNodeId ? 'text-blue-400' : 'text-gray-500'}
-              />
+              {node.panoramaPreviewUrl ? (
+                <img
+                  src={node.panoramaPreviewUrl}
+                  alt=""
+                  loading="lazy"
+                  className={`w-14 h-9 rounded object-cover flex-shrink-0 border
+                              ${node.id === activeNodeId ? 'border-blue-400' : 'border-white/10'}`}
+                />
+              ) : (
+                <MapMarkerIcon
+                  size={14}
+                  className={node.id === activeNodeId ? 'text-blue-400' : 'text-gray-500'}
+                />
+              )}
               <span className="text-sm truncate">{node.displayName}</span>
               {node.id === activeNodeId && (
                 <span className="ml-auto text-xs text-blue-400 font-medium">Now</span>
@@ -89,9 +99,9 @@ export default function NavigationSidebar({
                          bg-white/10 hover:bg-white/15 transition-colors text-sm"
             >
               {audioMuted ? (
-                <FaVolumeMute size={16} className="text-red-400" />
+                <VolumeMuteIcon size={16} className="text-red-400" />
               ) : (
-                <FaVolumeUp size={16} className="text-green-400" />
+                <VolumeUpIcon size={16} className="text-green-400" />
               )}
               <span>{audioMuted ? 'Unmute Background Audio' : 'Mute Background Audio'}</span>
             </button>

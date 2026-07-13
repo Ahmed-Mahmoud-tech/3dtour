@@ -1,25 +1,99 @@
 import {
   useRef,
   useEffect,
-  useLayoutEffect,
   useCallback,
   useState,
   Suspense,
 } from "react";
 import { Canvas, useThree, useFrame, invalidate } from "@react-three/fiber";
-import { useTexture, Html } from "@react-three/drei";
+import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import NavigationHotspot from "./NavigationHotspot.jsx";
 import InfoSign from "./InfoSign.jsx";
 
 const SPHERE_RADIUS = 50;
 
+// ─── Nadir logo patch settings ───────────────────────────────────────────────
+// A flat disc pinned at the bottom of the scene to hide the robot/tripod that
+// carries the camera. Shows the project's client logo when set; falls back to
+// the Gateverse logo (served from client/public/, Vite maps it to "/").
+const DEFAULT_NADIR_LOGO_URL = "/gateverse-logo.png";
+// Half-angle (degrees, measured from straight down) the disc must cover.
+// Bigger = wider patch. ~25–30° hides a typical tripod/robot footprint.
+const NADIR_COVER_DEG = 28;
+// How far below the camera the disc sits. Must be well inside the sphere
+// radius so it always renders in front of panorama/video spheres.
+const NADIR_Y = -20;
+
+// ─── Progressive equirectangular texture loader ──────────────────────────────
+// Loads the tiny preview first (decodes in ~ms, shows instantly), then swaps
+// in the full-resolution texture once it's downloaded and decoded. Returns
+// null until at least the preview is ready.
+function useProgressiveTexture(fullUrl, previewUrl) {
+  const { gl } = useThree();
+  const [texture, setTexture] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    let previewTex = null;
+    let fullTex = null;
+    let fullReady = false;
+    const loader = new THREE.TextureLoader();
+
+    const configure = (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.repeat.x = -1;
+      tex.offset.x = 1; // fixes seam/cutting caused by negative repeat
+      tex.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
+      return tex;
+    };
+
+    if (previewUrl) {
+      loader.load(previewUrl, (tex) => {
+        if (!alive || fullReady) return tex.dispose();
+        previewTex = configure(tex);
+        setTexture(previewTex);
+        invalidate();
+      });
+    }
+
+    loader.load(
+      fullUrl,
+      (tex) => {
+        if (!alive) return tex.dispose();
+        fullReady = true;
+        fullTex = configure(tex);
+        setTexture(fullTex);
+        if (previewTex) {
+          previewTex.dispose();
+          previewTex = null;
+        }
+        invalidate();
+      },
+      undefined,
+      () => console.error("Panorama failed to load:", fullUrl),
+    );
+
+    return () => {
+      alive = false;
+      setTexture(null);
+      if (previewTex) previewTex.dispose();
+      if (fullTex) fullTex.dispose();
+    };
+  }, [fullUrl, previewUrl, gl]);
+
+  return texture;
+}
+
 // ─── Panorama Sphere Mesh ─────────────────────────────────────────────────────
-// Converts the equirectangular texture to a cubemap and uses it as scene.background.
-// This gives true rectilinear projection — straight lines stay straight.
-// The sphere is rotated by initialYawOffset so all panoramas align to the same world direction.
+// An inside-out textured sphere. The sphere is rotated by initialYawOffset so
+// all panoramas align to the same world direction. (The old scene.background
+// PMREM path was removed: it blurred the image into a fixed-res cubemap and
+// burned CPU/VRAM on every node change — the sphere mesh already fills the view.)
 function PanoramaSphere({
   panoramaUrl,
+  previewUrl,
   opacity = 1,
   // Starting opacity on mount. 0 = fade in from transparent (default);
   // 1 = appear fully opaque immediately (used for the "previous" panorama
@@ -28,17 +102,15 @@ function PanoramaSphere({
   onFadeComplete,
   onFadeInComplete,
   yawOffset = 0,
-  useBackground = true,
   customSphere = SPHERE_RADIUS,
 }) {
-  const texture = useTexture(panoramaUrl);
-  const { gl, scene } = useThree();
+  const texture = useProgressiveTexture(panoramaUrl, previewUrl);
   const opacityRef = useRef(initialOpacity);
   const matRef = useRef();
   const meshRef = useRef();
   const onFadeCompleteRef = useRef(onFadeComplete);
   const onFadeInCompleteRef = useRef(onFadeInComplete);
-  const [textureReady, setTextureReady] = useState(false);
+  const textureReady = Boolean(texture);
 
   // Tracks whether the fade to the current target has already finished,
   // so useFrame can stop doing any work once there's nothing left to animate.
@@ -98,57 +170,8 @@ function PanoramaSphere({
     }
   });
 
-  // useLayoutEffect (not useEffect): for an already-cached texture this whole
-  // setup — including setTextureReady(true) — runs synchronously BEFORE the
-  // browser paints, so a cross-fade never paints a frame where the previous
-  // panorama hasn't appeared yet (which would flash the un-rotated background).
-  useLayoutEffect(() => {
-    const loadTexture = async () => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.repeat.x = -1;
-      texture.offset.x = 1; // fixes seam/cutting caused by negative repeat
-      texture.needsUpdate = true;
-
-      // Wait for texture to be ready (if it has an image source)
-      if (texture.image && texture.image.complete === false) {
-        await new Promise((resolve) => {
-          texture.image.onload = resolve;
-          texture.image.onerror = resolve; // Continue even on error
-        });
-      }
-
-      // Only set as background if not in transition (no video playing)
-      if (useBackground) {
-        const pmrem = new THREE.PMREMGenerator(gl);
-        const envMap = pmrem.fromEquirectangular(texture).texture;
-        pmrem.dispose();
-        scene.background = envMap;
-
-        setTextureReady(true);
-        invalidate();
-
-        return () => {
-          scene.background = null;
-          envMap.dispose();
-        };
-      } else {
-        setTextureReady(true);
-      }
-    };
-
-    loadTexture();
-  }, [texture, gl, scene, useBackground]);
-
   // Rotate sphere mesh by yawOffset to align all panoramas to the same world direction
   const rotationY = THREE.MathUtils.degToRad(yawOffset);
-
-  console.log(
-    "📷 PANORAMA IMAGE ROTATION:",
-    yawOffset + "°",
-    "(mesh rotation, independent of camera) -",
-    panoramaUrl.split("/").pop(),
-  );
 
   // Don't render until texture is ready
   if (!textureReady) return null;
@@ -186,11 +209,74 @@ function PanoramaControls({
   const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
   const onYawChangeRef = useRef(onYawChange);
   const onPitchChangeRef = useRef(onPitchChange);
+  // Inertia: velocity (radians/frame) sampled from the last drag movement,
+  // decayed after release so the camera glides to a stop.
+  const velocity = useRef({ x: 0, y: 0 });
+  const inertiaRaf = useRef(0);
+  // Pinch-to-zoom state (distance between two touches on the previous event)
+  const pinchDist = useRef(0);
+
+  const MIN_FOV = 35;
+  const MAX_FOV = 90;
+  const PITCH_LIMIT = THREE.MathUtils.degToRad(85);
 
   useEffect(() => {
     onYawChangeRef.current = onYawChange;
     onPitchChangeRef.current = onPitchChange;
   });
+
+  const applyCamera = useCallback(() => {
+    camera.quaternion.setFromEuler(euler.current);
+    invalidate();
+    onYawChangeRef.current?.(euler.current.y);
+    onPitchChangeRef.current?.(euler.current.x);
+  }, [camera]);
+
+  const stopInertia = useCallback(() => {
+    cancelAnimationFrame(inertiaRaf.current);
+    velocity.current = { x: 0, y: 0 };
+  }, []);
+
+  const startInertia = useCallback(() => {
+    cancelAnimationFrame(inertiaRaf.current);
+    const step = () => {
+      velocity.current.x *= 0.94;
+      velocity.current.y *= 0.94;
+      if (
+        Math.abs(velocity.current.x) < 0.0002 &&
+        Math.abs(velocity.current.y) < 0.0002
+      ) {
+        return; // glided to a stop — loop ends, demand-mode renderer goes idle
+      }
+      euler.current.y += velocity.current.y;
+      euler.current.x = Math.max(
+        -PITCH_LIMIT,
+        Math.min(PITCH_LIMIT, euler.current.x + velocity.current.x),
+      );
+      applyCamera();
+      inertiaRaf.current = requestAnimationFrame(step);
+    };
+    inertiaRaf.current = requestAnimationFrame(step);
+  }, [applyCamera, PITCH_LIMIT]);
+
+  // Scroll-to-zoom: wheel adjusts field of view (clamped), like every major
+  // tour viewer. Pinch on touch devices does the same (see onTouchMove).
+  const zoomBy = useCallback(
+    (deltaFov) => {
+      camera.fov = THREE.MathUtils.clamp(camera.fov + deltaFov, MIN_FOV, MAX_FOV);
+      camera.updateProjectionMatrix();
+      invalidate();
+    },
+    [camera],
+  );
+
+  const onWheel = useCallback(
+    (e) => {
+      e.preventDefault();
+      zoomBy(e.deltaY * 0.03);
+    },
+    [zoomBy],
+  );
 
   // Set camera to preserved position on mount AND when preserved values update
   // This fixes race conditions where state updates after component mounts
@@ -200,17 +286,9 @@ function PanoramaControls({
     if (preservedCameraYaw !== null && euler.current.y !== preservedCameraYaw) {
       euler.current.y = preservedCameraYaw; // already in radians
       updated = true;
-      console.log(
-        "🎥 USER CAMERA DRAG (preserved):",
-        ((preservedCameraYaw * 180) / Math.PI).toFixed(2) + "° yaw",
-        "(pure user input, independent of mesh rotation)",
-      );
     } else if (preservedCameraYaw === null && euler.current.y !== 0) {
       euler.current.y = 0;
       updated = true;
-      console.log(
-        "🎥 USER CAMERA DRAG (initial): 0° yaw (pure user input, independent of mesh rotation)",
-      );
     }
 
     if (
@@ -219,17 +297,9 @@ function PanoramaControls({
     ) {
       euler.current.x = preservedCameraPitch; // already in radians
       updated = true;
-      console.log(
-        "🎥 USER CAMERA DRAG (preserved):",
-        ((preservedCameraPitch * 180) / Math.PI).toFixed(2) + "° pitch",
-        "(pure user input, independent of mesh rotation)",
-      );
     } else if (preservedCameraPitch === null && euler.current.x !== 0) {
       euler.current.x = 0;
       updated = true;
-      console.log(
-        "🎥 USER CAMERA DRAG (initial): 0° pitch (pure user input, independent of mesh rotation)",
-      );
     }
 
     // Only update camera if values actually changed
@@ -241,12 +311,16 @@ function PanoramaControls({
     }
   }, [camera, preservedCameraYaw, preservedCameraPitch]);
 
-  const onPointerDown = useCallback((e) => {
-    e.preventDefault();
-    isDragging.current = true;
-    prevMouse.current = { x: e.clientX, y: e.clientY };
-    e.target.setPointerCapture(e.pointerId);
-  }, []);
+  const onPointerDown = useCallback(
+    (e) => {
+      e.preventDefault();
+      stopInertia();
+      isDragging.current = true;
+      prevMouse.current = { x: e.clientX, y: e.clientY };
+      e.target.setPointerCapture(e.pointerId);
+    },
+    [stopInertia],
+  );
 
   const onPointerMove = useCallback(
     (e) => {
@@ -255,68 +329,104 @@ function PanoramaControls({
       const dy = e.clientY - prevMouse.current.y;
       prevMouse.current = { x: e.clientX, y: e.clientY };
 
-      const sensitivity = 0.003;
+      // Zooming in narrows the FOV — scale sensitivity so panning feels
+      // consistent at any zoom level.
+      const sensitivity = 0.003 * (camera.fov / 65);
       euler.current.y -= dx * sensitivity;
       euler.current.x -= dy * sensitivity;
+      euler.current.x = Math.max(
+        -PITCH_LIMIT,
+        Math.min(PITCH_LIMIT, euler.current.x),
+      );
 
-      // Clamp vertical look: -85° to +85°
-      const limit = THREE.MathUtils.degToRad(85);
-      euler.current.x = Math.max(-limit, Math.min(limit, euler.current.x));
+      // Remember the last movement as velocity for release inertia
+      velocity.current = { y: -dx * sensitivity, x: -dy * sensitivity };
 
-      camera.quaternion.setFromEuler(euler.current);
       // Canvas uses frameloop="demand" — a ref-only camera mutation like this
-      // won't trigger a render on its own, so ask for one explicitly.
-      invalidate();
-
-      // Report camera yaw and pitch changes from user drag
-      onYawChangeRef.current?.(euler.current.y);
-      onPitchChangeRef.current?.(euler.current.x);
+      // won't trigger a render on its own, so applyCamera invalidates explicitly.
+      applyCamera();
     },
-    [camera],
+    [camera, applyCamera, PITCH_LIMIT],
   );
 
-  const onPointerUp = useCallback((e) => {
-    isDragging.current = false;
-    onYawChangeRef.current?.(euler.current.y);
-    onPitchChangeRef.current?.(euler.current.x);
-    if (e?.target?.releasePointerCapture)
-      e.target.releasePointerCapture(e.pointerId);
-  }, []);
+  const onPointerUp = useCallback(
+    (e) => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      onYawChangeRef.current?.(euler.current.y);
+      onPitchChangeRef.current?.(euler.current.x);
+      startInertia();
+      if (e?.target?.releasePointerCapture)
+        e.target.releasePointerCapture(e.pointerId);
+    },
+    [startInertia],
+  );
 
-  // Touch support
-  const onTouchStart = useCallback((e) => {
-    const t = e.touches[0];
-    isDragging.current = true;
-    prevMouse.current = { x: t.clientX, y: t.clientY };
-  }, []);
+  // Touch support (single finger = pan, two fingers = pinch zoom)
+  const onTouchStart = useCallback(
+    (e) => {
+      stopInertia();
+      if (e.touches.length === 2) {
+        isDragging.current = false;
+        pinchDist.current = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY,
+        );
+        return;
+      }
+      const t = e.touches[0];
+      isDragging.current = true;
+      prevMouse.current = { x: t.clientX, y: t.clientY };
+    },
+    [stopInertia],
+  );
 
   const onTouchMove = useCallback(
     (e) => {
+      if (e.touches.length === 2) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY,
+        );
+        if (pinchDist.current > 0) zoomBy((pinchDist.current - dist) * 0.2);
+        pinchDist.current = dist;
+        return;
+      }
       const t = e.touches[0];
       onPointerMove({ clientX: t.clientX, clientY: t.clientY });
     },
-    [onPointerMove],
+    [onPointerMove, zoomBy],
   );
 
-  const onTouchEnd = useCallback(() => {
-    isDragging.current = false;
-    onYawChangeRef.current?.(euler.current.y);
-    onPitchChangeRef.current?.(euler.current.x);
-  }, []);
+  const onTouchEnd = useCallback(
+    (e) => {
+      pinchDist.current = 0;
+      if (!isDragging.current) return;
+      if (e?.touches?.length > 0) return; // a finger is still down
+      isDragging.current = false;
+      onYawChangeRef.current?.(euler.current.y);
+      onPitchChangeRef.current?.(euler.current.x);
+      startInertia();
+    },
+    [startInertia],
+  );
 
   useEffect(() => {
     const canvas = gl.domElement;
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("touchstart", onTouchStart, { passive: true });
     canvas.addEventListener("touchmove", onTouchMove, { passive: true });
     canvas.addEventListener("touchend", onTouchEnd);
 
     return () => {
+      cancelAnimationFrame(inertiaRaf.current);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("touchmove", onTouchMove);
       canvas.removeEventListener("touchend", onTouchEnd);
@@ -326,6 +436,7 @@ function PanoramaControls({
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    onWheel,
     onTouchStart,
     onTouchMove,
     onTouchEnd,
@@ -360,26 +471,25 @@ function VideoSphere({
   // Once the fade-in has reached 1 (and we're not fading out yet) or the
   // fade-out has fully completed, there's nothing left for useFrame to do.
   const doneRef = useRef(false);
+  // True when the browser supports requestVideoFrameCallback: texture uploads
+  // are then driven by actual decoded video frames (~24–30/s) instead of
+  // re-invalidating at display refresh (up to 120/s) — this was the main cause
+  // of the FPS collapse during transitions.
+  const rvfcActiveRef = useRef(false);
 
-  // Update video texture + fade-in / fade-out opacity every frame.
-  // Canvas runs frameloop="demand": this callback only fires as long as
-  // something keeps calling invalidate(). While the video is actively
-  // playing we re-invalidate every frame (the texture needs continuous
-  // updates); the moment fade-out finishes we stop invalidating and the
-  // loop goes fully idle — no more useFrame calls until something new happens.
   useFrame(() => {
     if (doneRef.current) return;
 
-    if (texture) texture.needsUpdate = true;
+    // Fallback path only: without rVFC we must refresh the texture every frame
+    if (!rvfcActiveRef.current && texture) texture.needsUpdate = true;
+
     if (matRef.current) {
       if (fadingOutRef.current) {
-        // Fade out smoothly: ~0.5 second at 60 fps
         // Call onEnded when fade STARTS to switch nodes
         if (!onEndedCalledRef.current) {
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
-        // Continue fading out
         if (!fadeCompleteCalledRef.current) {
           matRef.current.opacity = opacityRef.current;
           fadeCompleteCalledRef.current = true;
@@ -395,10 +505,9 @@ function VideoSphere({
         matRef.current.opacity = opacityRef.current;
         // Still fading in — ask for another frame.
         invalidate();
-      } else {
-        // Fully faded in, still playing: texture.needsUpdate must keep
-        // getting set every frame for the video to display correctly,
-        // so keep the loop alive until fade-out kicks in.
+      } else if (!rvfcActiveRef.current) {
+        // Fully faded in, still playing, no rVFC: keep the loop alive so the
+        // texture keeps updating. (With rVFC the video frames drive rendering.)
         invalidate();
       }
     }
@@ -432,18 +541,24 @@ function VideoSphere({
     tex.offset.x = 1; // fixes seam/cutting caused by negative repeat
     tex.colorSpace = THREE.SRGBColorSpace;
 
-    console.log("Video Texture Yaw Offset:", textureYawOffset + "°");
-
-    const handleCanPlay = () => {
-      // Video has enough data to start playing
-      console.log("✅ Video ready to play:", videoUrl.split("/").pop());
+    // Drive texture uploads from decoded video frames when supported: the
+    // callback fires once per NEW frame (~24–30/s), so we render exactly as
+    // often as the video produces pixels instead of at display refresh.
+    let rvfcHandle = null;
+    const pumpVideoFrames = () => {
+      tex.needsUpdate = true;
+      invalidate();
+      rvfcHandle = video.requestVideoFrameCallback(pumpVideoFrames);
     };
 
     const handlePlaying = () => {
       // Only show sphere once the first frame is actually decoded — no black flash
       if (mounted) {
         setTexture(tex);
-        console.log("✅ Video playback started:", videoUrl.split("/").pop());
+        if (typeof video.requestVideoFrameCallback === "function") {
+          rvfcActiveRef.current = true;
+          rvfcHandle = video.requestVideoFrameCallback(pumpVideoFrames);
+        }
         // Kick the demand-mode render loop so the fade-in/texture-update
         // useFrame actually starts running.
         invalidate();
@@ -464,7 +579,6 @@ function VideoSphere({
       onEndedRef.current?.();
     };
 
-    video.addEventListener("canplay", handleCanPlay, { once: true });
     video.addEventListener("playing", handlePlaying, { once: true });
     video.addEventListener("ended", handleEnded);
     video.addEventListener("error", handleError);
@@ -485,7 +599,10 @@ function VideoSphere({
 
     return () => {
       mounted = false;
-      video.removeEventListener("canplay", handleCanPlay);
+      if (rvfcHandle && typeof video.cancelVideoFrameCallback === "function") {
+        video.cancelVideoFrameCallback(rvfcHandle);
+      }
+      rvfcActiveRef.current = false;
       video.removeEventListener("playing", handlePlaying);
       video.removeEventListener("ended", handleEnded);
       video.removeEventListener("error", handleError);
@@ -502,12 +619,6 @@ function VideoSphere({
   // Convert degrees to radians; positive rotation = clockwise from above
   const rotationY = THREE.MathUtils.degToRad(textureYawOffset);
 
-  console.log(
-    "🎬 VIDEO ROTATION:",
-    textureYawOffset + "°",
-    "(mesh rotation, independent of camera)",
-  );
-
   return (
     <mesh ref={meshRef} rotation={[0, rotationY, 0]}>
       {/* Slightly smaller radius so video renders in front of PanoramaSphere */}
@@ -519,6 +630,63 @@ function VideoSphere({
         transparent
         opacity={0}
       />
+    </mesh>
+  );
+}
+
+// ─── Nadir Logo Patch ─────────────────────────────────────────────────────────
+// A world-fixed disc at the bottom of the sphere that hides the camera robot.
+// It sits much closer to the camera than any panorama/video sphere, so the
+// depth test keeps it on top of all of them, including during transitions.
+// It does NOT rotate with node yawOffset: panoramas are all aligned to the
+// same world direction, and the robot is always at the nadir anyway.
+// Shows the project's client logo (`url`); if that is unset OR fails to load
+// (e.g. the file was deleted), it falls back to the default Gateverse logo.
+function NadirLogo({ url }) {
+  const [texture, setTexture] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    let tex = null;
+    const loader = new THREE.TextureLoader();
+
+    const apply = (loaded) => {
+      if (!alive) return loaded.dispose();
+      loaded.colorSpace = THREE.SRGBColorSpace;
+      tex = loaded;
+      setTexture(loaded);
+      invalidate(); // demand-mode loop: render the newly loaded patch
+    };
+
+    const loadDefault = () =>
+      loader.load(DEFAULT_NADIR_LOGO_URL, apply, undefined, () =>
+        console.error("Nadir logo failed to load:", DEFAULT_NADIR_LOGO_URL),
+      );
+
+    if (url) {
+      // Client logo missing/broken → fall back to the default logo
+      loader.load(url, apply, undefined, loadDefault);
+    } else {
+      loadDefault();
+    }
+
+    return () => {
+      alive = false;
+      setTexture(null);
+      if (tex) tex.dispose();
+    };
+  }, [url]);
+
+  if (!texture) return null;
+
+  // Disc radius that covers NADIR_COVER_DEG from straight down at height NADIR_Y
+  const radius =
+    Math.abs(NADIR_Y) * Math.tan(THREE.MathUtils.degToRad(NADIR_COVER_DEG));
+
+  return (
+    <mesh position={[0, NADIR_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <circleGeometry args={[radius, 64]} />
+      <meshBasicMaterial map={texture} transparent />
     </mesh>
   );
 }
@@ -542,6 +710,7 @@ function Scene({
   panoramaOpacity,
   onPanoramaFadeInComplete,
   videoQueueIndex,
+  nadirLogoUrl,
 }) {
   return (
     <>
@@ -560,10 +729,10 @@ function Scene({
         <Suspense fallback={null} key={`prev-${previousNode.id}`}>
           <PanoramaSphere
             panoramaUrl={previousNode.panoramaUrl}
+            previewUrl={previousNode.panoramaPreviewUrl}
             opacity={1}
             initialOpacity={1}
             yawOffset={previousNode.initialYawOffset || 0}
-            useBackground={false}
             customSphere={SPHERE_RADIUS + 0.05}
           />
         </Suspense>
@@ -577,9 +746,9 @@ function Scene({
         <Suspense fallback={null} key={`backdrop-${backdropNode.id}`}>
           <PanoramaSphere
             panoramaUrl={backdropNode.panoramaUrl}
+            previewUrl={backdropNode.panoramaPreviewUrl}
             opacity={1}
             yawOffset={backdropNode.initialYawOffset || 0}
-            useBackground={false}
             customSphere={SPHERE_RADIUS + radiusOffset}
           />
         </Suspense>
@@ -588,10 +757,10 @@ function Scene({
       <PanoramaSphere
         key={node.id}
         panoramaUrl={node.panoramaUrl}
+        previewUrl={node.panoramaPreviewUrl}
         opacity={panoramaOpacity}
         onFadeInComplete={onPanoramaFadeInComplete}
         yawOffset={node.initialYawOffset || 0}
-        useBackground={!transitionVideoUrl && !previousNode}
       />
       {/* Video sphere - rotated by video's yawOffset */}
       {/* Video sphere - keyed by queueIndex to force re-mount between sequential videos */}
@@ -604,6 +773,8 @@ function Scene({
           textureYawOffset={videoTextureYawOffset || 0}
         />
       )}
+      {/* Nadir patch: logo disc hiding the camera robot at the bottom */}
+      <NadirLogo url={nadirLogoUrl} />
       {/* Hotspots and signs - rotated by same yawOffset as panorama to stay in correct position */}
       <group
         rotation={[0, THREE.MathUtils.degToRad(node.initialYawOffset || 0), 0]}
@@ -649,6 +820,7 @@ export default function SphereViewer({
   videoTextureYawOffset,
   spotHasVideo,
   videoQueueIndex,
+  nadirLogoUrl,
 }) {
   const [displayedNode, setDisplayedNode] = useState(node);
   const [previousNode, setPreviousNode] = useState(null);
@@ -670,6 +842,7 @@ export default function SphereViewer({
         setPreviousNode({
           id: displayedNode.id,
           panoramaUrl: displayedNode.panoramaUrl,
+          panoramaPreviewUrl: displayedNode.panoramaPreviewUrl,
           initialYawOffset: displayedNode.initialYawOffset,
         });
         setPanoramaOpacity(1);
@@ -713,6 +886,9 @@ export default function SphereViewer({
       // from being called once its work is done — early-returning inside
       // a useFrame callback alone does NOT stop the render loop.
       frameloop="demand"
+      // Cap device-pixel-ratio at 2: on high-DPI screens rendering at dpr 3
+      // quadruples fragment work for no visible gain on a photo sphere.
+      dpr={[1, 2]}
       camera={{ fov: 65, near: 0.1, far: 200, position: [0, 0, 0.01] }}
       style={{
         width: "100%",
@@ -743,6 +919,7 @@ export default function SphereViewer({
         panoramaOpacity={panoramaOpacity}
         onPanoramaFadeInComplete={handleFadeInComplete}
         videoQueueIndex={videoQueueIndex}
+        nadirLogoUrl={nadirLogoUrl}
       />
     </Canvas>
   );

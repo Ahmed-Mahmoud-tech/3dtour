@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import { v4 as uuidv4 } from 'uuid';
 import Project from '../models/Project.js';
+import { optimizePanorama, optimizeVideoInPlace } from '../utils/mediaOptimizer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,7 +33,13 @@ const reverseVideo = (inputPath) =>
     ffmpeg(inputPath)
       .videoFilters('reverse')
       .noAudio()
-      .outputOptions(['-pix_fmt', 'yuv420p']) // broad browser compatibility
+      .outputOptions([
+        '-pix_fmt', 'yuv420p', // broad browser compatibility
+        '-c:v', 'libx264',
+        '-crf', '25',
+        '-preset', 'fast',
+        '-movflags', '+faststart',
+      ])
       .output(outputPath)
       .on('end', () => resolve(outputPath))
       .on('error', (err) => reject(err))
@@ -45,8 +52,12 @@ const reverseVideo = (inputPath) =>
 export const uploadPanoramaHandler = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    const url = toPublicUrl(req.file.path);
-    res.status(201).json({ url });
+    // Convert to WebP (~10x smaller than PNG) + tiny preview for blur-up loading
+    const { filePath, previewPath } = await optimizePanorama(req.file.path);
+    res.status(201).json({
+      url: toPublicUrl(filePath),
+      previewUrl: toPublicUrl(previewPath),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -94,8 +105,13 @@ export const uploadTransitionVideo = async (req, res) => {
     // Reversed URL will be patched into the project once FFmpeg finishes
     res.status(201).json({ videoUrl, reverseVideoUrl: '', message: 'Reverse processing started' });
 
-    // Async reverse processing
+    // Async processing: first shrink the forward clip in place (same filename,
+    // so the URL we just returned stays valid), then generate the reverse from
+    // the optimized file so it inherits the smaller size.
     try {
+      await optimizeVideoInPlace(req.file.path).catch((err) =>
+        console.error('Video optimization failed (continuing with original):', err.message),
+      );
       const reversedPath = await reverseVideo(req.file.path);
       const reverseVideoUrl = toPublicUrl(reversedPath);
 

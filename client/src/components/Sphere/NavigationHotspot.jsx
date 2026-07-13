@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Html } from "@react-three/drei";
 import { degToPosition } from "../../utils/coordUtils.js";
-import { FaArrowRight } from "react-icons/fa";
+import { ArrowRightIcon } from "../icons.jsx";
 
 /**
  * NavigationHotspot
@@ -13,6 +13,7 @@ import { FaArrowRight } from "react-icons/fa";
  */
 export default function NavigationHotspot({ hotspot, onNavigate }) {
   const [hovered, setHovered] = useState(false);
+  const downPos = useRef(null);
   const position = degToPosition(
     hotspot.position2D.x_deg,
     hotspot.position2D.y_deg,
@@ -20,6 +21,16 @@ export default function NavigationHotspot({ hotspot, onNavigate }) {
 
   const handleClick = (e) => {
     e.stopPropagation();
+    // Ignore "clicks" that were actually camera drags starting on the hotspot
+    if (
+      downPos.current &&
+      Math.hypot(
+        e.clientX - downPos.current.x,
+        e.clientY - downPos.current.y,
+      ) > 8
+    ) {
+      return;
+    }
     const videoUrl = hotspot.transitionVideoUrl || null;
     const reverseVideoUrl = hotspot.reverseTransitionVideoUrl || null;
 
@@ -47,6 +58,9 @@ export default function NavigationHotspot({ hotspot, onNavigate }) {
     >
       <div
         onClick={handleClick}
+        onPointerDown={(e) => {
+          downPos.current = { x: e.clientX, y: e.clientY };
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className="hotspot-pulse relative cursor-pointer flex items-center justify-center rounded-full
@@ -61,7 +75,7 @@ export default function NavigationHotspot({ hotspot, onNavigate }) {
         }}
         title={`Go to next area`}
       >
-        <FaArrowRight
+        <ArrowRightIcon
           size={baseSize * 0.45}
           color="white"
           style={{

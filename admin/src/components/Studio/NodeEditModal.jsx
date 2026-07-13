@@ -40,8 +40,9 @@ export default function NodeEditModal({ node, onClose, onSave, saving }) {
     if (newPanoramaFile) {
       setUploading(true);
       try {
-        const { url } = await mediaApi.uploadPanorama(newPanoramaFile);
+        const { url, previewUrl } = await mediaApi.uploadPanorama(newPanoramaFile);
         updateData.panoramaUrl = url;
+        updateData.panoramaPreviewUrl = previewUrl || "";
       } catch (err) {
         console.error("Failed to upload panorama:", err);
         alert("Failed to upload new panorama image");

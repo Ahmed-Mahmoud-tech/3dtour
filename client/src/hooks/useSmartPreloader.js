@@ -12,7 +12,7 @@ import { useCallback, useRef, useState } from "react";
  */
 export function useSmartPreloader() {
   const imageCache = useRef(new Set());
-  const videoCache = useRef(new Map());
+  const videoCache = useRef(new Set());
   const loadedNodes = useRef(new Set());
   const loadingCancelledRef = useRef(false); // Flag to cancel background loading
 
@@ -96,7 +96,6 @@ export function useSmartPreloader() {
             await img.decode();
           }
           imageCache.current.add(url);
-          console.log("✅ Image preloaded:", url.split("/").pop());
           resolve();
         } catch (err) {
           console.warn("⚠️ Image decode failed:", url.split("/").pop());
@@ -114,7 +113,10 @@ export function useSmartPreloader() {
   }, []);
 
   /**
-   * Preload a video URL.
+   * Preload a video URL by fetching it fully into the browser's HTTP cache.
+   * (The old approach kept a hidden <video> element per clip alive forever,
+   * pinning every preloaded video's buffer in memory. A plain fetch warms the
+   * disk cache — the server marks uploads immutable — and holds nothing.)
    * @param {string} url
    * @returns {Promise<void>}
    */
@@ -123,35 +125,21 @@ export function useSmartPreloader() {
       return Promise.resolve();
     }
 
-    return new Promise((resolve) => {
-      const video = document.createElement("video");
-      video.preload = "auto";
-      video.muted = true;
-      video.playsInline = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
 
-      const cleanup = (success = true) => {
-        if (success) {
-          videoCache.current.set(url, video);
-          console.log("✅ Video preloaded:", url.split("/").pop());
-        } else {
-          video.src = "";
-          video.load();
-          console.warn("⚠️ Video preload failed:", url.split("/").pop());
-        }
-        resolve();
-      };
-
-      video.addEventListener("loadeddata", () => cleanup(true), { once: true });
-      video.addEventListener("error", () => cleanup(false), { once: true });
-
-      const timer = setTimeout(() => cleanup(false), 5000); // 5 second timeout
-      video.addEventListener("loadeddata", () => clearTimeout(timer), {
-        once: true,
-      });
-
-      video.src = url;
-      video.load();
-    });
+    return fetch(url, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob(); // drain the body so the full file lands in cache
+      })
+      .then(() => {
+        videoCache.current.add(url);
+      })
+      .catch(() => {
+        console.warn("⚠️ Video preload failed:", url.split("/").pop());
+      })
+      .finally(() => clearTimeout(timer));
   }, []);
 
   /**
@@ -317,13 +305,8 @@ export function useSmartPreloader() {
    */
   const clearCache = useCallback(() => {
     imageCache.current.clear();
-    videoCache.current.forEach((video) => {
-      video.src = "";
-      video.load();
-    });
     videoCache.current.clear();
     loadedNodes.current.clear();
-    console.log("🗑️ All caches cleared");
   }, []);
 
   return {

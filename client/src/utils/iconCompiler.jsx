@@ -1,10 +1,15 @@
 /**
  * Dynamic Icon Compiler
  *
- * Takes a string icon name (e.g. "FaInfoCircle", "IoArrowForward") and returns
+ * Takes a string icon name (e.g. "FaInfoCircle", "IoArrowForward") and renders
  * the corresponding React component from react-icons.
  *
- * Supported packs (extend iconPackMap to add more):
+ * Icon packs are loaded LAZILY via dynamic import: statically importing all
+ * eight packs (`import * as FaIcons ...`) forced ~7 MB of icon code into the
+ * main bundle. Each pack is now a separate chunk fetched the first time an
+ * icon from it is actually rendered, then cached for the session.
+ *
+ * Supported packs (extend iconPackLoaders to add more):
  *   fa  — Font Awesome 5  (react-icons/fa)
  *   fa6 — Font Awesome 6  (react-icons/fa6)
  *   io  — Ionicons 4      (react-icons/io)
@@ -19,56 +24,84 @@
  *   <DynamicIcon name="FaInfoCircle" size={24} color="white" />
  */
 
-import * as FaIcons  from 'react-icons/fa';
-import * as Fa6Icons from 'react-icons/fa6';
-import * as IoIcons  from 'react-icons/io';
-import * as Io5Icons from 'react-icons/io5';
-import * as MdIcons  from 'react-icons/md';
-import * as HiIcons  from 'react-icons/hi';
-import * as BiIcons  from 'react-icons/bi';
-import * as FiIcons  from 'react-icons/fi';
+import { useEffect, useState } from 'react';
 
-/** Map of prefix → icon pack import namespace */
-const iconPackMap = {
-  Fa:  FaIcons,
-  Fa6: Fa6Icons,
-  Io5: Io5Icons,
-  Io:  IoIcons,
-  Md:  MdIcons,
-  Hi:  HiIcons,
-  Bi:  BiIcons,
-  Fi:  FiIcons,
+/** Map of prefix → lazy pack loader (each becomes its own async chunk) */
+const iconPackLoaders = {
+  Fa:  () => import('react-icons/fa'),
+  Fa6: () => import('react-icons/fa6'),
+  Io5: () => import('react-icons/io5'),
+  Io:  () => import('react-icons/io'),
+  Md:  () => import('react-icons/md'),
+  Hi:  () => import('react-icons/hi'),
+  Bi:  () => import('react-icons/bi'),
+  Fi:  () => import('react-icons/fi'),
 };
 
-/**
- * Resolve an icon string name to the React component.
- * Returns null if the icon is not found.
- *
- * @param {string} name  e.g. "FaInfoCircle" | "MdHome"
- * @returns {React.ComponentType | null}
- */
-export function resolveIcon(name) {
+// Try prefixes from longest to shortest to avoid Io matching Io5 names
+const prefixes = Object.keys(iconPackLoaders).sort((a, b) => b.length - a.length);
+
+/** Already-loaded pack namespaces, keyed by prefix */
+const loadedPacks = {};
+/** In-flight pack loads, keyed by prefix (dedupes concurrent requests) */
+const pendingLoads = {};
+
+function packPrefixOf(name) {
   if (!name) return null;
-
-  // Try prefixes from longest to shortest to avoid Io matching Io5 names
-  const prefixes = Object.keys(iconPackMap).sort((a, b) => b.length - a.length);
-
-  for (const prefix of prefixes) {
-    if (name.startsWith(prefix)) {
-      const pack = iconPackMap[prefix];
-      return pack[name] || null;
-    }
-  }
-  return null;
+  return prefixes.find((p) => name.startsWith(p)) || null;
 }
 
 /**
- * React component wrapper — renders the resolved icon or a fallback.
+ * Resolve an icon string name to its React component, loading the icon pack
+ * chunk on first use. Resolves to null if the icon is not found.
+ *
+ * @param {string} name  e.g. "FaInfoCircle" | "MdHome"
+ * @returns {Promise<React.ComponentType | null>}
+ */
+export async function resolveIcon(name) {
+  const prefix = packPrefixOf(name);
+  if (!prefix) return null;
+
+  if (!loadedPacks[prefix]) {
+    if (!pendingLoads[prefix]) {
+      pendingLoads[prefix] = iconPackLoaders[prefix]()
+        .then((mod) => {
+          loadedPacks[prefix] = mod;
+          return mod;
+        })
+        .catch(() => null)
+        .finally(() => {
+          delete pendingLoads[prefix];
+        });
+    }
+    await pendingLoads[prefix];
+  }
+
+  return loadedPacks[prefix]?.[name] || null;
+}
+
+/**
+ * React component wrapper — renders the resolved icon, or a small circle
+ * placeholder while the pack chunk loads / when the icon is unknown.
  *
  * @param {{ name: string, size?: number, color?: string, className?: string }} props
  */
 export function DynamicIcon({ name, size = 24, color = 'white', className = '' }) {
-  const IconComponent = resolveIcon(name);
+  const [IconComponent, setIconComponent] = useState(() => {
+    // Synchronous hit when the pack is already loaded — no placeholder flash
+    const prefix = packPrefixOf(name);
+    return (prefix && loadedPacks[prefix]?.[name]) || null;
+  });
+
+  useEffect(() => {
+    let alive = true;
+    resolveIcon(name).then((Comp) => {
+      if (alive) setIconComponent(() => Comp);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [name]);
 
   if (!IconComponent) {
     // Fallback: render a small circle placeholder

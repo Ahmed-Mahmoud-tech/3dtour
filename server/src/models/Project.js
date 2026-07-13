@@ -92,6 +92,9 @@ const NodeSchema = new mongoose.Schema(
     id: { type: String, required: true },
     displayName: { type: String, required: true },
     panoramaUrl: { type: String, required: true },
+    // Low-res preview generated at upload; the viewer shows it instantly and
+    // swaps in the full panorama once decoded (blur-up)
+    panoramaPreviewUrl: { type: String, default: "" },
     initialYawOffset: { type: Number, default: 0 },
     navigationHotspots: { type: [NavigationHotspotSchema], default: [] },
     infoSigns: { type: [InfoSignSchema], default: [] },
@@ -124,6 +127,9 @@ const ProjectSchema = new mongoose.Schema(
     info: {
       title: { type: String, required: true, trim: true },
       author: { type: String, default: "" },
+      // Client's logo shown on the nadir patch (bottom of every sphere).
+      // Empty string → viewer falls back to the default Gateverse logo.
+      nadirLogoUrl: { type: String, default: "" },
     },
     settings: {
       initialNodeId: { type: String, default: "" },
