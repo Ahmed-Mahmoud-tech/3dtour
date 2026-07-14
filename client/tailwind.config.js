@@ -1,6 +1,8 @@
 /** @type {import('tailwindcss').Config} */
-export default {
-  content: ['./index.html', './src/**/*.{js,jsx}'],
+// CJS on purpose: this config is loaded by BOTH Next.js (postcss) and the
+// Vite static-player build. Keep it require()-compatible.
+module.exports = {
+  content: ['./app/**/*.{js,jsx}', './src/**/*.{js,jsx}', './index.html'],
   theme: {
     extend: {
       colors: {
@@ -18,8 +20,10 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Manrope', 'IBM Plex Sans Arabic', 'system-ui', 'sans-serif'],
-        arabic: ['IBM Plex Sans Arabic', 'Manrope', 'system-ui', 'sans-serif'],
+        // --font-manrope / --font-arabic come from next/font in app/layout.jsx.
+        // The Vite static-player build has no next/font — system fallbacks apply.
+        sans: ['var(--font-manrope)', 'var(--font-arabic)', 'system-ui', 'sans-serif'],
+        arabic: ['var(--font-arabic)', 'var(--font-manrope)', 'system-ui', 'sans-serif'],
       },
     },
   },

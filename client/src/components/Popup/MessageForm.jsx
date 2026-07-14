@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const API = import.meta.env.VITE_API_URL || "/api";
+const API = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 /**
  * "Leave a message" modal for tour visitors. Posts to the public

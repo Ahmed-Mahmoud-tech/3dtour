@@ -3,8 +3,8 @@
 A production-grade, data-driven 3D Virtual Tour Platform with:
 
 - **`/server`** — Node.js + Express + MongoDB backend API
-- **`/client`** — React + Three.js viewer (user-facing)
-- **`/admin`** — React + Three.js admin dashboard with 3D placement studio
+- **`/client`** — Next.js app: marketing landing (`/`, `/ar`), React + Three.js tour viewer (`/tour/:id`), and tour-owner dashboard (`/dashboard/:id`)
+- **`/admin`** — React + Three.js admin dashboard with 3D placement studio (Vite)
 
 ---
 
@@ -28,11 +28,12 @@ npm install
 npm run dev                  # http://localhost:5000
 ```
 
-### 2. Client (viewer)
+### 2. Client (landing + viewer + dashboard, Next.js)
 ```bash
 cd client
 npm install
-npm run dev                  # http://localhost:5173/tour/:projectId
+npm run dev                  # http://localhost:5173  (landing at /, tours at /tour/:projectId)
+npm run build:static         # self-hosted tour player → dist-static/ (needed by the admin export)
 ```
 
 ### 3. Admin Dashboard
@@ -68,14 +69,19 @@ photovideo360/
 │   │   └── index.js                   Express app entry
 │   └── uploads/                       Local media storage (gitignored)
 │
-├── client/
+├── client/                            Next.js 14 (App Router)
+│   ├── app/
+│   │   ├── page.jsx / ar/page.jsx     Marketing landing (EN / AR, prerendered)
+│   │   ├── tour/[projectId]/          Tour viewer route (client-only, no SSR)
+│   │   └── dashboard/[tourId]/        Tour-owner dashboard route
 │   └── src/
+│       ├── landing/                   LandingView + GlobeCanvas + copy
 │       ├── utils/
 │       │   ├── coordUtils.js           degToCartesian / cartesianToDeg (R=50)
 │       │   └── iconCompiler.jsx        String → React Icon component resolver
 │       ├── hooks/
 │       │   ├── useTour.js              Tour state machine + audio
-│       │   └── usePreloader.js         Background image/video preloader
+│       │   └── useSmartPreloader.js    Background image/video preloader
 │       ├── components/
 │       │   ├── Sphere/SphereViewer.jsx     R3F sphere + drag controls
 │       │   ├── Sphere/NavigationHotspot.jsx
@@ -83,7 +89,9 @@ photovideo360/
 │       │   ├── Transition/TransitionPlayer.jsx  Video overlay
 │       │   ├── Popup/InfoPopup.jsx          DOMPurify sanitized HTML
 │       │   └── Sidebar/NavigationSidebar.jsx
-│       └── pages/TourPage.jsx
+│       ├── views/TourPage.jsx          Viewer screen (also the static player)
+│       ├── views/DashboardPage.jsx     Owner analytics dashboard
+│       └── main.jsx                    Entry of the Vite-built static player only
 │
 └── admin/
     └── src/

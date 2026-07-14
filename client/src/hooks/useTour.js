@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { useSmartPreloader } from "./useSmartPreloader";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 // Static (self-hosted export) build: the tour ships as ./tour.json next to
 // index.html, with media rewritten to relative ./media/... paths.
-const IS_STATIC = import.meta.env.VITE_STATIC_TOUR === "1";
+// (process.env.NEXT_PUBLIC_* is inlined by Next; the Vite static build
+// defines the same keys — see vite.config.js.)
+const IS_STATIC = process.env.NEXT_PUBLIC_STATIC_TOUR === "1";
 
 /**
  * useTour — Central state machine for the 360 tour viewer.

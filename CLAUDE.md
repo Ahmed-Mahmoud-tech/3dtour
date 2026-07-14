@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A 360° virtual tour platform built as three independent npm packages that share no code (utilities like `coordUtils.js` are **duplicated** between `client/` and `admin/`, not imported):
 
 - **`server/`** — Node.js + Express + MongoDB API (ES modules, `"type": "module"`)
-- **`client/`** — React + Three.js viewer, the user-facing tour player (Vite, port 5173)
+- **`client/`** — **Next.js 14 (App Router)** app on port 5173: the Gateverse marketing landing (`/` EN + `/ar` AR, statically prerendered for SEO), the user-facing tour viewer (`/tour/[projectId]`), and the tour-owner dashboard (`/dashboard/[tourId]`). Also carries a **secondary Vite build** that produces only the self-hosted static tour player (see Static export). Converted from Vite+react-router 2026-07-14; the former separate `landing/` Next package was merged in at the same time.
 - **`admin/`** — React + Three.js admin dashboard with a 3D placement studio (Vite, port 5174)
 
 Each has its own `package.json`; run `npm install` separately in each.
@@ -21,18 +21,21 @@ All commands run from the respective package directory.
 cd server && npm install && npm run dev     # nodemon, http://localhost:5000
 npm start                                    # production (plain node)
 
-# client / admin (identical scripts)
-npm run dev        # vite dev server
+# client (Next.js)
+npm run dev            # next dev, http://localhost:5173
+npm run build          # next build (landing pages prerendered; needs internet for next/font)
+npm start              # next start -p 5173 (production; Node server, NOT a static export)
+npm run build:static   # Vite build of the self-hosted tour player → client/dist-static/ (required before admin tour export works)
+
+# admin
+npm run dev        # vite dev server, port 5174
 npm run build      # production build to dist/
 npm run preview    # preview the build
-
-# client only
-npm run build:static   # self-hosted tour player → client/dist-static/ (required before admin tour export works)
 ```
 
 There is **no test runner, linter, or formatter configured** in any package — no `test`/`lint` scripts exist. `mongodb-memory-server` is a server devDependency but is not wired to any script.
 
-Both frontends proxy `/api` and `/uploads` to `http://localhost:5000` via Vite (see each `vite.config.js`), so the server must be running for either to function. Both read `import.meta.env.VITE_API_URL` and fall back to `/api`.
+Both frontends proxy `/api` and `/uploads` to `http://localhost:5000`, so the server must be running for either to function: the client via Next `rewrites()` in [client/next.config.mjs](client/next.config.mjs) (target overridable with `SERVER_ORIGIN`; Range requests pass through, verified for video streaming), the admin via the Vite dev proxy. The admin reads `import.meta.env.VITE_API_URL`; the client reads `process.env.NEXT_PUBLIC_API_URL`. Both fall back to `/api`.
 
 ## Architecture
 
@@ -58,7 +61,7 @@ A `Project` ([server/src/models/Project.js](server/src/models/Project.js)) is a 
 - **Projects** ([routes/projects.js](server/src/routes/projects.js)): `GET /:id/public` is the only public project route (the viewer uses it) and is **subscription-gated**; the admin studio reads via protected `GET /:id`. Everything else is behind `router.use(protect)` and scoped to `createdBy: req.user._id`. The list route takes `?q` (title search, regex-escaped), `?page&limit` (returns `{ items, total, page, pages }`; **without `page` it returns the legacy plain array**), and `?noOwner=1` / `?noEmployee=1` (unassigned-only, used by the admin assign pickers). Nested CRUD routes exist per node / hotspot / sign / transition.
 - **Admin** ([routes/admin.js](server/src/routes/admin.js), all `protect + adminOnly`): owner CRUD, password reset, per-project subscription create/renew/cancel (`/projects/:id/subscription`), tour assignment, and `GET /projects/:id/export` (self-hosted zip — see Static export below). `GET /owners` and `GET /employees` take `?q` (name/email search) and `?page&limit` with the same paginated-or-legacy-array convention as the projects list. The admin app's shared list UI (debounced `SearchInput`, `Pager`, searchable `AssignPicker`) lives in [ListControls.jsx](admin/src/components/ui/ListControls.jsx).
 - **Analytics** ([routes/analytics.js](server/src/routes/analytics.js)): public `POST /collect`, rate-limited, parses `text/plain` as JSON because `navigator.sendBeacon` can't send `application/json` without a preflight.
-- **Dashboard** ([routes/dashboard.js](server/src/routes/dashboard.js)): `GET /:tourId`, `/:tourId/sessions` (paginated: `?page&limit` → `{ items, total, page, pages }`), and the visitor-message inbox (`GET /:tourId/messages?page&limit&q` — `q` searches sender name/email/body but the `unread` count stays global; `PUT .../messages/:id/read`, `DELETE .../messages/:id` — all scoped to the tour, message id alone is never trusted), behind `protect` + `canAccessTour` (assigned owner or any admin — the URL is never trusted). Admins reach an owner dashboard from the admin app's Clients page: the link carries the admin JWT as `#token=...` and [DashboardPage.jsx](client/src/pages/DashboardPage.jsx) consumes the hash on mount (stores it as `owner_token`, strips it from the URL — the hash never reaches a server).
+- **Dashboard** ([routes/dashboard.js](server/src/routes/dashboard.js)): `GET /:tourId`, `/:tourId/sessions` (paginated: `?page&limit` → `{ items, total, page, pages }`), and the visitor-message inbox (`GET /:tourId/messages?page&limit&q` — `q` searches sender name/email/body but the `unread` count stays global; `PUT .../messages/:id/read`, `DELETE .../messages/:id` — all scoped to the tour, message id alone is never trusted), behind `protect` + `canAccessTour` (assigned owner or any admin — the URL is never trusted). Admins reach an owner dashboard from the admin app's Clients page: the link carries the admin JWT as `#token=...` and [DashboardPage.jsx](client/src/views/DashboardPage.jsx) consumes the hash on mount (stores it as `owner_token`, strips it from the URL — the hash never reaches a server).
 - **Messages** ([routes/messages.js](server/src/routes/messages.js)): public `POST /:tourId` — a visitor leaves a message for the tour owner (stored in the separate [Message](server/src/models/Message.js) collection, never on the Project). Rate-limited 3/min per IP with `skipFailedRequests: true` so validation failures don't consume quota. The viewer form ([MessageForm.jsx](client/src/components/Popup/MessageForm.jsx)) is hidden in static exports (no API).
 - **Media** ([routes/media.js](server/src/routes/media.js)): uploads (protected) for panorama/audio/image/video; public `GET /stream/:folder/:filename` (HTTP Range support) and `GET /reverse-status/...`.
 
@@ -68,7 +71,7 @@ Three collections, all in [server/src/models](server/src/models): **AnalyticsEve
 
 ### Static export (admin-only)
 
-`GET /api/admin/projects/:id/export` ([exportController.js](server/src/controllers/exportController.js)) streams a zip: the prebuilt static player (`client/dist-static`, from `npm run build:static`; override dir with `STATIC_PLAYER_DIR`) + `tour.json` (all `/uploads/...` URLs rewritten to relative `media/...`) + the media files. The static build compiles `VITE_STATIC_TOUR=1` in (see [client/vite.config.js](client/vite.config.js)): `useTour` then fetches `./tour.json`, the whole router renders `TourPage`, and analytics is disabled. Note: `archiver` v8 has **no default export** — `import { ZipArchive } from 'archiver'`.
+`GET /api/admin/projects/:id/export` ([exportController.js](server/src/controllers/exportController.js)) streams a zip: the prebuilt static player (`client/dist-static`, from `npm run build:static`; override dir with `STATIC_PLAYER_DIR`) + `tour.json` (all `/uploads/...` URLs rewritten to relative `media/...`) + the media files. The static player is the ONLY thing still built with Vite — Next.js can't emit relative asset paths, and the export zip must run from any sub-path on any static host. Its entry is [client/src/main.jsx](client/src/main.jsx) (renders `TourPage` directly, no router) and [client/vite.config.js](client/vite.config.js) `define`s `process.env.NEXT_PUBLIC_STATIC_TOUR = "1"`, which makes `useTour` fetch `./tour.json` and compiles out analytics + the message form. Note: `archiver` v8 has **no default export** — `import { ZipArchive } from 'archiver'`.
 
 ### Media pipeline
 
@@ -79,11 +82,15 @@ Three collections, all in [server/src/models](server/src/models): **AnalyticsEve
 
 Hotspot/sign positions are stored as `position2D: { x_deg, y_deg }` in degrees (0–360). `x_deg` = azimuth, `y_deg` = polar (0°=top, 90°≈eye level, 180°=floor). Conversion math lives in `coordUtils.js` (duplicated in [client](client/src/utils/coordUtils.js) and [admin](admin/src/utils/coordUtils.js) — **keep both in sync**). Sphere radius is hardcoded `R = 50`; the sphere is rendered inside-out (`BackSide`), which is why X and Z are negated. The admin studio raycasts clicks on the sphere and uses `cartesianToDeg` to capture placement coordinates.
 
+### Client app layout (Next.js)
+
+Routes live in [client/app/](client/app/): `/` + `/ar` are server-prerendered landing pages (metadata + LocalBusiness JSON-LD; copy in [content.js](client/src/landing/content.js), UI in [LandingView.jsx](client/src/landing/LandingView.jsx)); `/tour/[projectId]` and `/dashboard/[tourId]` are thin server pages whose `*Client.jsx` wrappers `next/dynamic`-import the real screens with `ssr: false` (WebGL + localStorage — never SSR them). The screens themselves live in `client/src/views/` — **the directory must NOT be named `src/pages`** or Next's pages router claims it and the build breaks. Shared viewer code reads `process.env.NEXT_PUBLIC_*` so the same files compile under both Next (inlined) and the Vite static build (`define` in vite.config.js). Full-height surfaces are per-route (`h-dvh` wrappers) — don't put `height: 100%` on html/body; the landing needs normal scrolling.
+
 ### Client viewer
 
 `useTour` ([client/src/hooks/useTour.js](client/src/hooks/useTour.js)) is the central state machine: fetches the project, tracks `activeNodeId`, drives the transition lifecycle (including a **sequential multi-video queue** — `transitionVideos` array on a hotspot plays in `order`), background audio (with autoplay-unlock on first click), and hides hotspots/signs during transitions. Rendering is React-Three-Fiber inside `SphereViewer`. `useSmartPreloader` background-loads neighbor panoramas by proximity (5s after the user settles).
 
-The client app also hosts the **tour-owner dashboard** at `/dashboard/:tourId` ([DashboardPage.jsx](client/src/pages/DashboardPage.jsx), lazy-loaded): renders a login form when logged out, forces a password change when `mustChangePassword`, then shows analytics + subscription + a paginated visitor-messages inbox (unread badge, mark read/unread, delete). Recent visits are paginated server-side; the engagement `BarList`s paginate client-side (8/page, bars scaled to the global max so later pages aren't misleading). Its chart series colors (`#0d9488`, `#8b5cf6`) were validated for contrast/CVD on the dark surface — don't casually swap them for lighter Tailwind steps.
+The client app also hosts the **tour-owner dashboard** at `/dashboard/:tourId` ([DashboardPage.jsx](client/src/views/DashboardPage.jsx), loaded client-only via `next/dynamic`): renders a login form when logged out, forces a password change when `mustChangePassword`, then shows analytics + subscription + a paginated visitor-messages inbox (unread badge, mark read/unread, delete). Recent visits are paginated server-side; the engagement `BarList`s paginate client-side (8/page, bars scaled to the global max so later pages aren't misleading). Its chart series colors (`#0d9488`, `#8b5cf6`) were validated for contrast/CVD on the dark surface — don't casually swap them for lighter Tailwind steps.
 
 ### Dynamic icons & sanitized HTML
 

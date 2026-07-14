@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback } from "react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 // Static (self-hosted export) builds have no API — tracking is compiled out.
-const DISABLED = import.meta.env.VITE_STATIC_TOUR === "1";
+const DISABLED = process.env.NEXT_PUBLIC_STATIC_TOUR === "1";
 
 const FLUSH_INTERVAL_MS = 10_000;
 const VISITOR_KEY = "gv_visitor_id";
