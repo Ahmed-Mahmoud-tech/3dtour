@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext.jsx";
 import { adminApi } from "../api/adminApi.js";
 import { projectApi } from "../api/projectApi.js";
 import {
@@ -9,11 +8,11 @@ import {
   AssignPicker,
   useDebounced,
 } from "../components/ui/ListControls.jsx";
+import AccountControls from "../components/Auth/AccountControls.jsx";
 import {
   FaPlus,
   FaTrash,
   FaGlobe,
-  FaSignOutAlt,
   FaSyncAlt,
   FaKey,
   FaUserSlash,
@@ -26,7 +25,6 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
 const PAGE_SIZE = 10;
 
 export default function EmployeesPage() {
-  const { user, logout } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [pageInfo, setPageInfo] = useState({ total: 0, page: 1, pages: 1 });
   const [loading, setLoading] = useState(true);
@@ -92,7 +90,9 @@ export default function EmployeesPage() {
     if (!password) return;
     try {
       await adminApi.resetEmployeePassword(employee._id, password);
-      window.alert("Password reset.");
+      window.alert(
+        "Password reset. The employee must choose a new password on their next login.",
+      );
     } catch (err) {
       window.alert(err.response?.data?.message || err.message);
     }
@@ -160,16 +160,7 @@ export default function EmployeesPage() {
             </Link>
           </nav>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-white text-sm">{user?.name}</span>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 text-gray-500 hover:text-white text-sm transition-colors"
-          >
-            <FaSignOutAlt size={14} />
-            Sign out
-          </button>
-        </div>
+        <AccountControls />
       </header>
 
       <main className="flex-1 px-6 py-8 max-w-5xl mx-auto w-full">

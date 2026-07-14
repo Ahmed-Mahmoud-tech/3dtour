@@ -333,7 +333,7 @@ export const updateEmployee = async (req, res) => {
   }
 };
 
-// PUT /api/admin/employees/:id/password  — assign a new password
+// PUT /api/admin/employees/:id/password  — assign a new temporary password
 export const resetEmployeePassword = async (req, res) => {
   try {
     const { password } = req.body;
@@ -344,6 +344,7 @@ export const resetEmployeePassword = async (req, res) => {
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
     employee.password = password; // pre-save hook re-hashes
+    employee.mustChangePassword = true;
     await employee.save();
 
     res.json({ message: 'Password reset', employee });

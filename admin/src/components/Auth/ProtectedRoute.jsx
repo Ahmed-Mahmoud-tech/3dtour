@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
+import ChangePasswordModal from './ChangePasswordModal.jsx';
 
 export default function ProtectedRoute({ children, adminOnly = false }) {
   const { user, loading } = useAuth();
@@ -14,5 +15,12 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
 
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && user.role !== 'admin') return <Navigate to="/projects" replace />;
-  return children;
+
+  // After an admin resets a staff password, block the app until it's changed.
+  return (
+    <>
+      {children}
+      {user.mustChangePassword && <ChangePasswordModal forced />}
+    </>
+  );
 }

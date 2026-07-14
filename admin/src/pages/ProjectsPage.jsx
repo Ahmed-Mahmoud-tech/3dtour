@@ -4,12 +4,12 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { projectApi, mediaApi } from "../api/projectApi.js";
 import { adminApi } from "../api/adminApi.js";
 import { SearchInput, Pager, useDebounced } from "../components/ui/ListControls.jsx";
+import AccountControls from "../components/Auth/AccountControls.jsx";
 import {
   FaPlus,
   FaEdit,
   FaTrash,
   FaGlobe,
-  FaSignOutAlt,
   FaSyncAlt,
   FaDownload,
   FaBan,
@@ -121,7 +121,7 @@ function AccessControls({ project, onChanged }) {
 const PAGE_SIZE = 12;
 
 export default function ProjectsPage() {
-  const { user, isAdmin, logout } = useAuth();
+  const { isAdmin } = useAuth();
   const [projects, setProjects] = useState([]);
   const [pageInfo, setPageInfo] = useState({ total: 0, page: 1, pages: 1 });
   const [loading, setLoading] = useState(true);
@@ -249,16 +249,7 @@ export default function ProjectsPage() {
             )}
           </nav>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-gray-400 text-sm">{user?.name}</span>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 text-gray-500 hover:text-white text-sm transition-colors"
-          >
-            <FaSignOutAlt size={14} />
-            Sign out
-          </button>
-        </div>
+        <AccountControls />
       </header>
 
       <main className="flex-1 px-6 py-8 max-w-5xl mx-auto w-full">

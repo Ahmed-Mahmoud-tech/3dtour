@@ -53,10 +53,14 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // Merge fresh fields into the cached user (e.g. after a password change
+  // clears mustChangePassword server-side).
+  const updateUser = (fields) => setUser((u) => (u ? { ...u, ...fields } : u));
+
   const isAdmin = user?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, isAdmin, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, isAdmin, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

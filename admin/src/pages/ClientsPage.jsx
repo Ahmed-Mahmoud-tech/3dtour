@@ -9,11 +9,11 @@ import {
   AssignPicker,
   useDebounced,
 } from "../components/ui/ListControls.jsx";
+import AccountControls from "../components/Auth/AccountControls.jsx";
 import {
   FaPlus,
   FaTrash,
   FaGlobe,
-  FaSignOutAlt,
   FaSyncAlt,
   FaKey,
   FaUserSlash,
@@ -58,7 +58,7 @@ function SubscriptionBadge({ sub }) {
 const PAGE_SIZE = 10;
 
 export default function ClientsPage() {
-  const { user, token, logout } = useAuth();
+  const { token } = useAuth();
   const [owners, setOwners] = useState([]);
   const [pageInfo, setPageInfo] = useState({ total: 0, page: 1, pages: 1 });
   const [loading, setLoading] = useState(true);
@@ -207,16 +207,7 @@ export default function ClientsPage() {
             </Link>
           </nav>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-white text-sm">{user?.name}</span>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 text-gray-500 hover:text-white text-sm transition-colors"
-          >
-            <FaSignOutAlt size={14} />
-            Sign out
-          </button>
-        </div>
+        <AccountControls />
       </header>
 
       <main className="flex-1 px-6 py-8 max-w-5xl mx-auto w-full">

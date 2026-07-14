@@ -64,7 +64,7 @@ export const getMe = async (req, res) => {
 };
 
 // PUT /api/auth/password
-// Self-service password change for any authenticated user (admin or owner).
+// Self-service password change for any authenticated user (admin, employee or owner).
 export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
