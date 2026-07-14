@@ -5,6 +5,11 @@ import {
   getDashboard,
   getRecentSessions,
 } from '../controllers/analyticsController.js';
+import {
+  getMessages,
+  setMessageRead,
+  deleteMessage,
+} from '../controllers/messageController.js';
 
 const router = Router();
 
@@ -14,5 +19,10 @@ router.use(protect);
 
 router.get('/:tourId', canAccessTour, getDashboard);
 router.get('/:tourId/sessions', canAccessTour, getRecentSessions);
+
+// Visitor messages inbox
+router.get('/:tourId/messages', canAccessTour, getMessages);
+router.put('/:tourId/messages/:messageId/read', canAccessTour, setMessageRead);
+router.delete('/:tourId/messages/:messageId', canAccessTour, deleteMessage);
 
 export default router;

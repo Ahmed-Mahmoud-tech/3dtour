@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
-// One subscription document per tour owner. The authoritative "is this
+// One subscription document per PROJECT (tour) — a client owning several
+// tours pays for each one separately. The authoritative "is this
 // subscription usable" check is expiresAt (see isActive virtual) — the status
 // field exists for display/filtering and admin actions like cancellation.
 const historyEntrySchema = new mongoose.Schema(
@@ -20,9 +21,9 @@ const historyEntrySchema = new mongoose.Schema(
 
 const subscriptionSchema = new mongoose.Schema(
   {
-    owner: {
+    project: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'Project',
       required: true,
       unique: true,
     },

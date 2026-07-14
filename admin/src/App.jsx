@@ -4,6 +4,7 @@ import ProtectedRoute from './components/Auth/ProtectedRoute.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import ProjectsPage from './pages/ProjectsPage.jsx';
 import ClientsPage from './pages/ClientsPage.jsx';
+import EmployeesPage from './pages/EmployeesPage.jsx';
 import ProjectEditPage from './pages/ProjectEditPage.jsx';
 import StudioPage from './pages/StudioPage.jsx';
 
@@ -19,7 +20,11 @@ export default function App() {
           } />
 
           <Route path="/clients" element={
-            <ProtectedRoute><ClientsPage /></ProtectedRoute>
+            <ProtectedRoute adminOnly><ClientsPage /></ProtectedRoute>
+          } />
+
+          <Route path="/employees" element={
+            <ProtectedRoute adminOnly><EmployeesPage /></ProtectedRoute>
           } />
 
           <Route path="/projects/:projectId" element={

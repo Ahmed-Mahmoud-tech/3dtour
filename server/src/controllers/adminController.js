@@ -10,12 +10,32 @@ const addToPlan = (from, plan) => {
   return d;
 };
 
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Shared list-query helpers: ?q searches name/email, ?page&limit paginate.
+// Without `page` the caller gets the legacy full array.
+const userSearchFilter = (role, q) => {
+  const filter = { role };
+  if (q) {
+    const rx = { $regex: escapeRegex(String(q).slice(0, 100)), $options: 'i' };
+    filter.$or = [{ name: rx }, { email: rx }];
+  }
+  return filter;
+};
+
+const pageParams = (req, defLimit = 10) => ({
+  paginated: req.query.page !== undefined,
+  page: Math.max(parseInt(req.query.page, 10) || 1, 1),
+  limit: Math.min(Math.max(parseInt(req.query.limit, 10) || defLimit, 1), 100),
+});
+
 // POST /api/admin/owners
-// Creates a tour-owner account with an admin-assigned password, and
-// optionally its subscription in the same call.
+// Creates a tour-owner account with an admin-assigned password.
+// Subscriptions are per PROJECT, not per owner — they're created when a tour
+// is sold, via POST /api/admin/projects/:id/subscription.
 export const createOwner = async (req, res) => {
   try {
-    const { name, email, password, plan } = req.body;
+    const { name, email, password } = req.body;
 
     if (!name || !email || !password)
       return res.status(400).json({ message: 'Name, email and password are required' });
@@ -34,39 +54,38 @@ export const createOwner = async (req, res) => {
       mustChangePassword: true,
     });
 
-    let subscription = null;
-    if (plan) {
-      const startedAt = new Date();
-      subscription = await Subscription.create({
-        owner: owner._id,
-        plan,
-        startedAt,
-        expiresAt: addToPlan(startedAt, plan),
-        history: [{ action: 'created', plan, by: req.user._id }],
-      });
-    }
-
-    res.status(201).json({ owner, subscription });
+    res.status(201).json({ owner });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/admin/owners
-// Lists owners with their subscription and assigned tours.
+// GET /api/admin/owners?q&page&limit
+// Lists owners with their assigned tours; each tour carries its own
+// subscription (subscriptions are per project).
 export const listOwners = async (req, res) => {
   try {
-    const owners = await User.find({ role: 'owner' }).sort({ createdAt: -1 }).lean();
+    const filter = userSearchFilter('owner', req.query.q);
+    const { paginated, page, limit } = pageParams(req);
+
+    let query = User.find(filter).sort({ createdAt: -1 });
+    if (paginated) query = query.skip((page - 1) * limit).limit(limit);
+    const [owners, total] = await Promise.all([
+      query.lean(),
+      paginated ? User.countDocuments(filter) : Promise.resolve(0),
+    ]);
     const ownerIds = owners.map((o) => o._id);
 
-    const [subscriptions, projects] = await Promise.all([
-      Subscription.find({ owner: { $in: ownerIds } }).lean(),
-      Project.find({ owner: { $in: ownerIds } }).select('info.title owner').lean(),
-    ]);
+    const projects = await Project.find({ owner: { $in: ownerIds } })
+      .select('info.title owner')
+      .lean();
+    const subscriptions = await Subscription.find({
+      project: { $in: projects.map((p) => p._id) },
+    }).lean();
 
-    const subsByOwner = new Map(
+    const subsByProject = new Map(
       subscriptions.map((s) => [
-        String(s.owner),
+        String(s.project),
         { ...s, isActive: s.status === 'active' && s.expiresAt > new Date() },
       ])
     );
@@ -74,16 +93,20 @@ export const listOwners = async (req, res) => {
     for (const p of projects) {
       const key = String(p.owner);
       if (!toursByOwner.has(key)) toursByOwner.set(key, []);
-      toursByOwner.get(key).push({ _id: p._id, title: p.info?.title || 'Untitled' });
+      toursByOwner.get(key).push({
+        _id: p._id,
+        title: p.info?.title || 'Untitled',
+        subscription: subsByProject.get(String(p._id)) || null,
+      });
     }
 
-    res.json(
-      owners.map((o) => ({
-        ...o,
-        subscription: subsByOwner.get(String(o._id)) || null,
-        tours: toursByOwner.get(String(o._id)) || [],
-      }))
-    );
+    const items = owners.map((o) => ({
+      ...o,
+      tours: toursByOwner.get(String(o._id)) || [],
+    }));
+
+    if (!paginated) return res.json(items);
+    res.json({ items, total, page, pages: Math.max(Math.ceil(total / limit), 1) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -129,7 +152,8 @@ export const resetOwnerPassword = async (req, res) => {
 };
 
 // DELETE /api/admin/owners/:id
-// Removes the account + subscription; assigned tours become unassigned.
+// Removes the account; assigned tours become unassigned. Subscriptions stay
+// with their projects (they're per project, not per owner).
 export const deleteOwner = async (req, res) => {
   try {
     const owner = await User.findOne({ _id: req.params.id, role: 'owner' });
@@ -137,7 +161,6 @@ export const deleteOwner = async (req, res) => {
 
     await Promise.all([
       Project.updateMany({ owner: owner._id }, { $set: { owner: null } }),
-      Subscription.deleteOne({ owner: owner._id }),
       owner.deleteOne(),
     ]);
 
@@ -147,8 +170,8 @@ export const deleteOwner = async (req, res) => {
   }
 };
 
-// POST /api/admin/owners/:id/subscription
-// Creates the subscription, or renews / changes plan if one exists.
+// POST /api/admin/projects/:id/subscription
+// Creates the project's subscription, or renews / changes plan if one exists.
 // Body: { plan: 'monthly'|'yearly', expiresAt? } — expiresAt overrides the
 // computed period end when the admin wants a custom date.
 export const upsertSubscription = async (req, res) => {
@@ -157,15 +180,15 @@ export const upsertSubscription = async (req, res) => {
     if (!['monthly', 'yearly'].includes(plan))
       return res.status(400).json({ message: 'plan must be monthly or yearly' });
 
-    const owner = await User.findOne({ _id: req.params.id, role: 'owner' });
-    if (!owner) return res.status(404).json({ message: 'Owner not found' });
+    const project = await Project.findById(req.params.id).select('_id');
+    if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    let sub = await Subscription.findOne({ owner: owner._id });
+    let sub = await Subscription.findOne({ project: project._id });
 
     if (!sub) {
       const startedAt = new Date();
       sub = await Subscription.create({
-        owner: owner._id,
+        project: project._id,
         plan,
         startedAt,
         expiresAt: expiresAt ? new Date(expiresAt) : addToPlan(startedAt, plan),
@@ -193,14 +216,14 @@ export const upsertSubscription = async (req, res) => {
   }
 };
 
-// PUT /api/admin/owners/:id/subscription  — cancel or reactivate
+// PUT /api/admin/projects/:id/subscription  — cancel or reactivate
 export const setSubscriptionStatus = async (req, res) => {
   try {
     const { status } = req.body;
     if (!['active', 'canceled'].includes(status))
       return res.status(400).json({ message: 'status must be active or canceled' });
 
-    const sub = await Subscription.findOne({ owner: req.params.id });
+    const sub = await Subscription.findOne({ project: req.params.id });
     if (!sub) return res.status(404).json({ message: 'Subscription not found' });
 
     sub.status = status;
@@ -210,6 +233,199 @@ export const setSubscriptionStatus = async (req, res) => {
     });
     await sub.save();
     res.json(sub);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ─── Employees ────────────────────────────────────────────────────────────────
+// Staff accounts (role 'employee') that log into the admin app and can only
+// see/edit the projects assigned to them.
+
+// POST /api/admin/employees
+export const createEmployee = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password)
+      return res.status(400).json({ message: 'Name, email and password are required' });
+    if (password.length < 8)
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(409).json({ message: 'Email already registered' });
+
+    const employee = await User.create({
+      name,
+      email,
+      password,
+      role: 'employee',
+      createdBy: req.user._id,
+    });
+
+    res.status(201).json(employee);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/admin/employees?q&page&limit
+// Lists employees with the projects assigned to each.
+export const listEmployees = async (req, res) => {
+  try {
+    const filter = userSearchFilter('employee', req.query.q);
+    const { paginated, page, limit } = pageParams(req);
+
+    let query = User.find(filter).sort({ createdAt: -1 });
+    if (paginated) query = query.skip((page - 1) * limit).limit(limit);
+    const [employees, total] = await Promise.all([
+      query.lean(),
+      paginated ? User.countDocuments(filter) : Promise.resolve(0),
+    ]);
+    const employeeIds = employees.map((e) => e._id);
+
+    const projects = await Project.find({ assignedTo: { $in: employeeIds } })
+      .select('info.title assignedTo')
+      .lean();
+
+    const projectsByEmployee = new Map();
+    for (const p of projects) {
+      const key = String(p.assignedTo);
+      if (!projectsByEmployee.has(key)) projectsByEmployee.set(key, []);
+      projectsByEmployee.get(key).push({ _id: p._id, title: p.info?.title || 'Untitled' });
+    }
+
+    const items = employees.map((e) => ({
+      ...e,
+      projects: projectsByEmployee.get(String(e._id)) || [],
+    }));
+
+    if (!paginated) return res.json(items);
+    res.json({ items, total, page, pages: Math.max(Math.ceil(total / limit), 1) });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT /api/admin/employees/:id  — update name/email/status
+export const updateEmployee = async (req, res) => {
+  try {
+    const employee = await User.findOne({ _id: req.params.id, role: 'employee' });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    const { name, email, status } = req.body;
+    if (name) employee.name = name;
+    if (email) employee.email = email;
+    if (status && ['active', 'suspended'].includes(status)) employee.status = status;
+
+    await employee.save();
+    res.json(employee);
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ message: 'Email already registered' });
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT /api/admin/employees/:id/password  — assign a new password
+export const resetEmployeePassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 8)
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+
+    const employee = await User.findOne({ _id: req.params.id, role: 'employee' });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    employee.password = password; // pre-save hook re-hashes
+    await employee.save();
+
+    res.json({ message: 'Password reset', employee });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// DELETE /api/admin/employees/:id
+// Removes the account; their projects become unassigned.
+export const deleteEmployee = async (req, res) => {
+  try {
+    const employee = await User.findOne({ _id: req.params.id, role: 'employee' });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+    await Promise.all([
+      Project.updateMany({ assignedTo: employee._id }, { $set: { assignedTo: null } }),
+      employee.deleteOne(),
+    ]);
+
+    res.json({ message: 'Employee deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT /api/admin/projects/:id/assign-employee  — body: { employeeId: string | null }
+export const assignProjectEmployee = async (req, res) => {
+  try {
+    const { employeeId } = req.body;
+
+    if (employeeId) {
+      if (!mongoose.isValidObjectId(employeeId))
+        return res.status(400).json({ message: 'Invalid employeeId' });
+      const employee = await User.findOne({ _id: employeeId, role: 'employee' });
+      if (!employee) return res.status(404).json({ message: 'Employee not found' });
+    }
+
+    const project = await Project.findByIdAndUpdate(
+      req.params.id,
+      { $set: { assignedTo: employeeId || null } },
+      { new: true }
+    ).select('info.title assignedTo');
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    res.json(project);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// PUT /api/admin/projects/:id/access
+// Body: { suspended?: boolean, expiryMode?: 'subscription'|'date'|'lifetime', expiryDate?: string }
+// Suspension and expiry mode drive the public-route gating in
+// projectController.getPublicProject; expiryDate is required for mode 'date'.
+export const updateProjectAccess = async (req, res) => {
+  try {
+    const { suspended, expiryMode, expiryDate } = req.body;
+
+    const project = await Project.findById(req.params.id).select(
+      'info.title owner suspended expiry'
+    );
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (suspended !== undefined) {
+      if (typeof suspended !== 'boolean')
+        return res.status(400).json({ message: 'suspended must be a boolean' });
+      project.suspended = suspended;
+    }
+
+    if (expiryMode !== undefined) {
+      if (!['subscription', 'date', 'lifetime'].includes(expiryMode))
+        return res
+          .status(400)
+          .json({ message: 'expiryMode must be subscription, date or lifetime' });
+      if (expiryMode === 'date') {
+        const date = new Date(expiryDate);
+        if (!expiryDate || Number.isNaN(date.getTime()))
+          return res
+            .status(400)
+            .json({ message: 'A valid expiryDate is required for mode date' });
+        project.expiry = { mode: 'date', date };
+      } else {
+        project.expiry = { mode: expiryMode, date: null };
+      }
+    }
+
+    await project.save();
+    res.json(project);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -4,7 +4,9 @@ const BASE = "/api";
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 export const projectApi = {
-  list: () => axios.get(`${BASE}/projects`).then((r) => r.data),
+  // params: { q, page, limit, noOwner, noEmployee } — with `page` the server
+  // returns { items, total, page, pages }; without it, the legacy array.
+  list: (params) => axios.get(`${BASE}/projects`, { params }).then((r) => r.data),
   get: (id) => axios.get(`${BASE}/projects/${id}`).then((r) => r.data),
   create: (payload) =>
     axios.post(`${BASE}/projects`, payload).then((r) => r.data),

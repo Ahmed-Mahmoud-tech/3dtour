@@ -174,9 +174,8 @@ export const getDashboard = async (req, res) => {
       DailyStat.find({ tourId: project._id, date: { $gte: from, $lte: to } })
         .sort({ date: 1 })
         .lean(),
-      project.owner
-        ? Subscription.findOne({ owner: project.owner }).select('-history').lean()
-        : null,
+      // Subscriptions are per project (each tour is paid for separately)
+      Subscription.findOne({ project: project._id }).select('-history').lean(),
     ]);
 
     // Plain objects after lean() (Mongoose stores Maps as objects internally)
@@ -233,14 +232,16 @@ export const getDashboard = async (req, res) => {
   }
 };
 
-// GET /api/dashboard/:tourId/sessions?limit=20
+// GET /api/dashboard/:tourId/sessions?page=1&limit=15
 // Recent visitor sessions with their navigation path, reconstructed from raw
-// events (available for the raw-event retention window).
+// events (available for the raw-event retention window). Paginated:
+// returns { items, total, page, pages }.
 export const getRecentSessions = async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 100);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
 
-    const sessions = await AnalyticsEvent.aggregate([
+    const [result] = await AnalyticsEvent.aggregate([
       { $match: { tourId: req.project._id } },
       { $sort: { sessionId: 1, seq: 1 } },
       {
@@ -257,11 +258,25 @@ export const getRecentSessions = async (req, res) => {
           },
         },
       },
-      { $sort: { startedAt: -1 } },
-      { $limit: limit },
+      {
+        $facet: {
+          items: [
+            { $sort: { startedAt: -1 } },
+            { $skip: (page - 1) * limit },
+            { $limit: limit },
+          ],
+          count: [{ $count: 'total' }],
+        },
+      },
     ]);
 
-    res.json(sessions);
+    const total = result.count[0]?.total || 0;
+    res.json({
+      items: result.items,
+      total,
+      page,
+      pages: Math.max(Math.ceil(total / limit), 1),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

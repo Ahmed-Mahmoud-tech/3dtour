@@ -5,9 +5,12 @@ import TourPage from './pages/TourPage.jsx';
 // Owner dashboard is code-split — visitors loading a tour never pay for it.
 const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx'));
 
-// The marketing site lives in the separate landing/ Next.js package.
-// In production it is served at the domain root; this app only owns /tour/*.
-const LANDING_URL = import.meta.env.VITE_LANDING_URL || 'http://localhost:3000';
+// The marketing site lives in the separate landing/ Next.js package but is
+// served from this origin's root: the Vite dev server proxies / and /ar to
+// the Next dev server (see vite.config.js), and production nginx does the
+// same. A plain <a href="/"> is a full page load, so it reaches the landing
+// even though react-router also has a "/" route.
+const LANDING_URL = import.meta.env.VITE_LANDING_URL || '/';
 
 function ViewerHome() {
   return (

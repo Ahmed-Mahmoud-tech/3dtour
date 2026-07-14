@@ -19,8 +19,8 @@ export function AuthProvider({ children }) {
     axios
       .get(`${API_BASE}/auth/me`)
       .then(({ data }) => {
-        // The admin studio is admins-only; owners use the client dashboard
-        if (data.role !== 'admin') throw new Error('not admin');
+        // The admin studio is for staff (admins + employees); owners use the client dashboard
+        if (!['admin', 'employee'].includes(data.role)) throw new Error('not staff');
         setUser(data);
       })
       .catch(() => {
@@ -34,8 +34,8 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await axios.post(`${API_BASE}/auth/login`, { email, password });
-    if (data.user?.role !== 'admin') {
-      const err = new Error('This panel is for administrators only.');
+    if (!['admin', 'employee'].includes(data.user?.role)) {
+      const err = new Error('This panel is for staff accounts only.');
       err.response = { data: { message: err.message } };
       throw err;
     }
@@ -53,8 +53,10 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const isAdmin = user?.role === 'admin';
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, isAdmin, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -376,6 +376,28 @@ function DailyChart({ days }) {
 
 // ─── Small building blocks ────────────────────────────────────────────────────
 
+/** Prev / Next pager. Renders nothing when there's a single page. */
+function Pager({ page, pages, onPage }) {
+  if (pages <= 1) return null;
+  const btn =
+    "px-2.5 py-1 rounded-md border border-gray-800 text-gray-400 " +
+    "hover:border-gray-600 hover:text-gray-200 disabled:opacity-40 " +
+    "disabled:hover:border-gray-800 disabled:hover:text-gray-400 transition-colors";
+  return (
+    <div className="flex items-center justify-between mt-3 text-xs">
+      <button className={btn} disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        ← Prev
+      </button>
+      <span className="text-gray-500 tabular-nums">
+        Page {page} of {pages}
+      </span>
+      <button className={btn} disabled={page >= pages} onClick={() => onPage(page + 1)}>
+        Next →
+      </button>
+    </div>
+  );
+}
+
 function StatTile({ label, value }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -385,17 +407,27 @@ function StatTile({ label, value }) {
   );
 }
 
-/** Ranked horizontal bar list (single-hue magnitude). */
-function BarList({ title, rows, emptyText }) {
+/** Ranked horizontal bar list (single-hue magnitude), paginated client-side. */
+function BarList({ title, rows, emptyText, pageSize = 8 }) {
+  const [page, setPage] = useState(1);
+  const pages = Math.max(Math.ceil(rows.length / pageSize), 1);
+  const cur = Math.min(page, pages); // clamp if rows shrink after a range change
+  const visible = rows.slice((cur - 1) * pageSize, cur * pageSize);
+  // Bars stay scaled to the global max so page 2 isn't misleadingly tall
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-      <h3 className="text-white text-sm font-semibold mb-3">{title}</h3>
+      <h3 className="text-white text-sm font-semibold mb-3">
+        {title}
+        {rows.length > pageSize && (
+          <span className="text-gray-500 font-normal ml-2">({rows.length})</span>
+        )}
+      </h3>
       {rows.length === 0 ? (
         <p className="text-gray-600 text-sm">{emptyText}</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {rows.map((r) => (
+          {visible.map((r) => (
             <li key={r.key} className="text-xs">
               <div className="flex justify-between text-gray-300 mb-0.5">
                 <span className="truncate pr-2">{r.label}</span>
@@ -414,6 +446,153 @@ function BarList({ title, rows, emptyText }) {
           ))}
         </ul>
       )}
+      <Pager page={cur} pages={pages} onPage={setPage} />
+    </div>
+  );
+}
+
+// ─── Visitor messages inbox ───────────────────────────────────────────────────
+
+function MessagesCard({ tourId }) {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState(""); // debounced search actually queried
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
+    try {
+      setError("");
+      setData(
+        await apiFetch(
+          `/dashboard/${tourId}/messages?page=${page}&limit=10&q=${encodeURIComponent(q)}`,
+        ),
+      );
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [tourId, page, q]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const toggleRead = async (m) => {
+    try {
+      await apiFetch(`/dashboard/${tourId}/messages/${m._id}/read`, {
+        method: "PUT",
+        body: JSON.stringify({ read: !m.read }),
+      });
+      setData((d) => ({
+        ...d,
+        unread: d.unread + (m.read ? 1 : -1),
+        items: d.items.map((x) => (x._id === m._id ? { ...x, read: !m.read } : x)),
+      }));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const remove = async (m) => {
+    if (!window.confirm("Delete this message? This cannot be undone.")) return;
+    try {
+      await apiFetch(`/dashboard/${tourId}/messages/${m._id}`, { method: "DELETE" });
+      // If we just emptied the current page, step back one; otherwise refresh.
+      if (data.items.length === 1 && page > 1) setPage(page - 1);
+      else load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <h3 className="text-white text-sm font-semibold mb-3 flex items-center gap-2">
+        Visitor messages
+        {data?.unread > 0 && (
+          <span className="bg-teal-600/20 border border-teal-600 text-teal-300 text-xs font-normal rounded-full px-2 py-0.5">
+            {data.unread} new
+          </span>
+        )}
+        {data?.total > 0 && (
+          <span className="text-gray-500 font-normal">({data.total})</span>
+        )}
+      </h3>
+      {(q || (data && data.total > 0)) && (
+        <input
+          className="w-full max-w-xs bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-xs mb-3 focus:outline-none focus:border-teal-500"
+          placeholder="Search messages by sender or text…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      )}
+      {error && <p className="text-red-400 text-sm mb-2">{error}</p>}
+      {!data ? (
+        <p className="text-gray-600 text-sm">Loading…</p>
+      ) : data.items.length === 0 ? (
+        <p className="text-gray-600 text-sm">
+          {q
+            ? `No messages match “${q}”.`
+            : "No messages yet. Visitors can write to you from the tour."}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {data.items.map((m) => (
+            <li
+              key={m._id}
+              className={`text-xs border rounded-lg p-3 ${
+                m.read
+                  ? "border-gray-800 bg-gray-900"
+                  : "border-teal-800/60 bg-teal-950/20"
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
+                {!m.read && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
+                )}
+                <span className="text-gray-200 font-medium">{m.name}</span>
+                {m.email && (
+                  <a
+                    href={`mailto:${m.email}`}
+                    className="text-teal-400 hover:text-teal-300"
+                  >
+                    {m.email}
+                  </a>
+                )}
+                <span className="text-gray-600 ml-auto">
+                  {new Date(m.createdAt).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-gray-300 whitespace-pre-wrap break-words">
+                {m.body}
+              </p>
+              <div className="flex items-center gap-3 mt-2">
+                <button
+                  onClick={() => toggleRead(m)}
+                  className="text-gray-500 hover:text-gray-300"
+                >
+                  {m.read ? "Mark as unread" : "Mark as read"}
+                </button>
+                <button
+                  onClick={() => remove(m)}
+                  className="text-gray-600 hover:text-red-400"
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {data && <Pager page={data.page} pages={data.pages} onPage={setPage} />}
     </div>
   );
 }
@@ -475,7 +654,8 @@ const RANGES = [
 function Dashboard({ tourId, me, onLogout, onChangePassword }) {
   const [rangeDays, setRangeDays] = useState(30);
   const [data, setData] = useState(null);
-  const [sessions, setSessions] = useState([]);
+  const [sessPage, setSessPage] = useState(1);
+  const [sessions, setSessions] = useState({ items: [], total: 0, page: 1, pages: 1 });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -486,12 +666,7 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
       const from = new Date(Date.now() - (rangeDays - 1) * 86400000)
         .toISOString()
         .slice(0, 10);
-      const [dash, sess] = await Promise.all([
-        apiFetch(`/dashboard/${tourId}?from=${from}`),
-        apiFetch(`/dashboard/${tourId}/sessions?limit=15`),
-      ]);
-      setData(dash);
-      setSessions(sess);
+      setData(await apiFetch(`/dashboard/${tourId}?from=${from}`));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -502,6 +677,13 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Recent visits are paginated server-side, independent of the range filter
+  useEffect(() => {
+    apiFetch(`/dashboard/${tourId}/sessions?page=${sessPage}&limit=10`)
+      .then(setSessions)
+      .catch(() => {}); // main error state is owned by the dashboard load
+  }, [tourId, sessPage]);
 
   // Fill the requested range with zero-days so the chart has a continuous axis
   const chartDays = useMemo(() => {
@@ -522,10 +704,10 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
   const barRows = useMemo(() => {
     if (!data) return { scenes: [], hotspots: [], popups: [], paths: [] };
     const { totals, labels } = data;
-    const top = (obj, mapLabel, n = 8) =>
+    // Full ranked lists — BarList paginates them client-side
+    const top = (obj, mapLabel) =>
       Object.entries(obj)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, n)
         .map(([key, value]) => ({ key, value, label: mapLabel(key) }));
 
     return {
@@ -679,16 +861,24 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
           />
         </div>
 
+        {/* Visitor messages */}
+        <MessagesCard tourId={tourId} />
+
         {/* Recent sessions */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h3 className="text-white text-sm font-semibold mb-3">
             Recent visits
+            {sessions.total > 0 && (
+              <span className="text-gray-500 font-normal ml-2">
+                ({sessions.total})
+              </span>
+            )}
           </h3>
-          {sessions.length === 0 ? (
+          {sessions.items.length === 0 ? (
             <p className="text-gray-600 text-sm">No visits recorded yet.</p>
           ) : (
             <ul className="flex flex-col gap-3">
-              {sessions.map((s) => (
+              {sessions.items.map((s) => (
                 <li
                   key={s._id}
                   className="text-xs border-b border-gray-800 last:border-0 pb-3 last:pb-0"
@@ -710,6 +900,7 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
               ))}
             </ul>
           )}
+          <Pager page={sessions.page} pages={sessions.pages} onPage={setSessPage} />
         </div>
       </main>
     </div>
@@ -725,6 +916,20 @@ export default function DashboardPage() {
   const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
+    // Admin handoff: the admin panel links here with its JWT in the URL hash
+    // (#token=...). The hash never reaches any server; consume it, store it
+    // as this app's session and strip it from the address bar. The server
+    // still decides what the token may access (canAccessTour allows admins).
+    const hashMatch = window.location.hash.match(/[#&]token=([^&]+)/);
+    if (hashMatch) {
+      localStorage.setItem(TOKEN_KEY, decodeURIComponent(hashMatch[1]));
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
+    }
+
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return setChecking(false);
     apiFetch("/auth/me")

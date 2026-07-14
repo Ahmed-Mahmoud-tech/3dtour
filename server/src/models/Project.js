@@ -160,6 +160,29 @@ const ProjectSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // Admin kill-switch: a suspended tour's public route returns 403
+    // regardless of expiry mode or subscription state.
+    suspended: { type: Boolean, default: false },
+    // How the public route decides the tour has expired:
+    //  - 'subscription' (default): owner's subscription expiry + 3-month grace
+    //  - 'date': blocked after an admin-chosen fixed date
+    //  - 'lifetime': never expires
+    expiry: {
+      mode: {
+        type: String,
+        enum: ["subscription", "date", "lifetime"],
+        default: "subscription",
+      },
+      date: { type: Date, default: null },
+    },
+    // The staff member (role 'employee') assigned to build/maintain this tour.
+    // Scopes what that employee can see and edit in the studio. null = unassigned.
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,

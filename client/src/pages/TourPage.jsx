@@ -6,8 +6,11 @@ import { useAnalytics } from "../hooks/useAnalytics.js";
 import SphereViewer from "../components/Sphere/SphereViewer.jsx";
 import NavigationSidebar from "../components/Sidebar/NavigationSidebar.jsx";
 import InfoPopup from "../components/Popup/InfoPopup.jsx";
+import MessageForm from "../components/Popup/MessageForm.jsx";
 
 const FADE_MS = 250; // ms for fade-to-black transitions
+// Static exports have no API — the contact form is compiled out with them.
+const IS_STATIC = import.meta.env.VITE_STATIC_TOUR === "1";
 
 export default function TourPage() {
   const { projectId } = useParams();
@@ -39,6 +42,9 @@ export default function TourPage() {
   const containerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showDragHint, setShowDragHint] = useState(true);
+
+  // ─── Visitor → owner contact form ──────────────────────────────────────────
+  const [showMessageForm, setShowMessageForm] = useState(false);
 
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -340,7 +346,17 @@ export default function TourPage() {
   }
 
   if (error) {
-    if (errorReason === "subscription_expired") {
+    // Server-side access gating: all three reasons share the same screen,
+    // only the detail line differs.
+    const blockedDetail = {
+      subscription_expired:
+        "The subscription for this virtual tour has ended. If you are the tour owner, please contact your provider to renew it.",
+      project_expired:
+        "Access to this virtual tour has ended. If you are the tour owner, please contact your provider to renew it.",
+      project_suspended:
+        "This virtual tour has been temporarily suspended. If you are the tour owner, please contact your provider.",
+    }[errorReason];
+    if (blockedDetail) {
       return (
         <div className="flex h-full flex-col items-center justify-center bg-black gap-4 px-6 text-center">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
@@ -348,10 +364,7 @@ export default function TourPage() {
             <path d="M7 11V7a5 5 0 0 1 10 0v4" />
           </svg>
           <p className="text-white text-xl font-semibold">This tour is currently unavailable</p>
-          <p className="text-white/50 text-sm max-w-md">
-            The subscription for this virtual tour has ended. If you are the tour
-            owner, please contact your provider to renew it.
-          </p>
+          <p className="text-white/50 text-sm max-w-md">{blockedDetail}</p>
         </div>
       );
     }
@@ -440,6 +453,22 @@ export default function TourPage() {
         {activeNode.displayName}
       </div>
 
+      {/* ── Leave a message (hidden in static exports — no API) ── */}
+      {!IS_STATIC && (
+        <button
+          onClick={() => setShowMessageForm(true)}
+          title="Leave a message"
+          className="absolute bottom-20 right-6 z-10 w-10 h-10 flex items-center
+                     justify-center rounded-full bg-black/50 backdrop-blur-sm
+                     border border-white/10 text-white/80 hover:text-white
+                     hover:bg-black/70 transition-colors cursor-pointer"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+      )}
+
       {/* ── Fullscreen toggle ── */}
       <button
         onClick={toggleFullscreen}
@@ -480,6 +509,15 @@ export default function TourPage() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* ── Visitor → owner message form ── */}
+      {showMessageForm && (
+        <MessageForm
+          tourId={projectId}
+          nodeId={activeNodeId}
+          onClose={() => setShowMessageForm(false)}
+        />
       )}
 
       {/* ── Info sign popup (rendered outside Canvas for correct layering) ── */}

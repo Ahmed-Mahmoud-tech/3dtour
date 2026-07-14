@@ -24,18 +24,52 @@ const deleteUploadByUrl = (url) => {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const nodeId = () => `node_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
+
+// Studio access scope: admins see the projects they created, employees only
+// the projects assigned to them (any other role matches nothing).
+const scopeFilter = (req) =>
+  req.user.role === "employee"
+    ? { assignedTo: req.user._id }
+    : { createdBy: req.user._id };
 const signId = () => `sign_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
 const hotspotId = () => `nav_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
 
 // ─── Projects ────────────────────────────────────────────────────────────────
 
-// GET /api/projects
+// Escape user input before embedding it in a $regex
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// GET /api/projects?q&page&limit&noOwner&noEmployee
+// q searches the title; noOwner=1 / noEmployee=1 keep only unassigned projects
+// (used by the admin assign pickers). Without `page` the response is the
+// legacy plain array; with it, { items, total, page, pages }.
 export const getProjects = async (req, res) => {
   try {
-    const projects = await Project.find({ createdBy: req.user._id })
-      .select("info settings.initialNodeId owner createdAt updatedAt")
-      .sort("-createdAt");
-    res.json(projects);
+    const filter = { ...scopeFilter(req) };
+    if (req.query.q)
+      filter["info.title"] = { $regex: escapeRegex(String(req.query.q).slice(0, 100)), $options: "i" };
+    if (req.query.noOwner === "1") filter.owner = null;
+    if (req.query.noEmployee === "1") filter.assignedTo = null;
+
+    const select =
+      "info settings.initialNodeId owner assignedTo suspended expiry createdAt updatedAt";
+
+    if (req.query.page === undefined) {
+      const projects = await Project.find(filter).select(select).sort("-createdAt");
+      return res.json(projects);
+    }
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 12, 1), 100);
+    const [items, total] = await Promise.all([
+      Project.find(filter)
+        .select(select)
+        .sort("-createdAt")
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Project.countDocuments(filter),
+    ]);
+    res.json({ items, total, page, pages: Math.max(Math.ceil(total / limit), 1) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -44,7 +78,10 @@ export const getProjects = async (req, res) => {
 // GET /api/projects/:id  (protected — studio reads)
 export const getProject = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project =
+      req.user.role === "employee"
+        ? await Project.findOne({ _id: req.params.id, ...scopeFilter(req) })
+        : await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
     res.json(project);
   } catch (err) {
@@ -52,19 +89,50 @@ export const getProject = async (req, res) => {
   }
 };
 
-// GET /api/projects/:id/public  (viewer — no auth, but subscription-gated)
-// Tours assigned to an owner are only served while that owner's subscription
-// is active. Unassigned tours (admin-internal/demos) are always served.
+// Grace period the default expiry mode adds on top of the project's
+// subscription expiry before the public route stops serving the tour.
+const SUBSCRIPTION_GRACE_MONTHS = 3;
+
+// GET /api/projects/:id/public  (viewer — no auth, but access-gated)
+// A suspended tour is never served. Otherwise expiry.mode decides:
+//  - 'lifetime': always served
+//  - 'date': served until the admin-chosen date
+//  - 'subscription' (default): each PROJECT carries its own subscription.
+//    Tours assigned to an owner are served while the project's subscription
+//    is active, plus a 3-month grace after its expiry date (a canceled
+//    subscription blocks immediately; no subscription record blocks too).
+//    Unassigned tours (admin-internal/demos) are always served.
 export const getPublicProject = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    if (project.owner) {
-      const sub = await Subscription.findOne({ owner: project.owner })
+    if (project.suspended) {
+      return res.status(403).json({
+        message: "This tour is currently unavailable",
+        reason: "project_suspended",
+      });
+    }
+
+    const mode = project.expiry?.mode || "subscription";
+
+    if (mode === "date") {
+      if (project.expiry?.date && project.expiry.date <= new Date()) {
+        return res.status(403).json({
+          message: "This tour is currently unavailable",
+          reason: "project_expired",
+        });
+      }
+    } else if (mode === "subscription" && project.owner) {
+      const sub = await Subscription.findOne({ project: project._id })
         .select("status expiresAt")
         .lean();
-      const active = sub && sub.status === "active" && sub.expiresAt > new Date();
+      let active = false;
+      if (sub && sub.status === "active") {
+        const graceEnd = new Date(sub.expiresAt);
+        graceEnd.setMonth(graceEnd.getMonth() + SUBSCRIPTION_GRACE_MONTHS);
+        active = graceEnd > new Date();
+      }
       if (!active) {
         return res.status(403).json({
           message: "This tour is currently unavailable",
@@ -79,9 +147,12 @@ export const getPublicProject = async (req, res) => {
   }
 };
 
-// POST /api/projects
+// POST /api/projects  (admins only — employees work on assigned projects)
 export const createProject = async (req, res) => {
   try {
+    if (req.user.role !== "admin")
+      return res.status(403).json({ message: "Admin access required" });
+
     const { title, author, nadirLogoUrl } = req.body;
     if (!title) return res.status(400).json({ message: "Title is required" });
 
@@ -104,7 +175,7 @@ export const updateProject = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -137,12 +208,15 @@ export const updateProject = async (req, res) => {
   }
 };
 
-// DELETE /api/projects/:id
+// DELETE /api/projects/:id  (admins only)
 export const deleteProject = async (req, res) => {
   try {
+    if (req.user.role !== "admin")
+      return res.status(403).json({ message: "Admin access required" });
+
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -173,8 +247,11 @@ export const deleteProject = async (req, res) => {
     // Delete files from disk
     urls.forEach((u) => deleteUploadByUrl(u));
 
-    // Finally remove the project document
-    await Project.findOneAndDelete({ _id: req.params.id, createdBy: req.user._id });
+    // Finally remove the project document + its subscription
+    await Promise.all([
+      Project.findOneAndDelete({ _id: req.params.id, createdBy: req.user._id }),
+      Subscription.deleteOne({ project: req.params.id }),
+    ]);
     res.json({ message: "Project deleted" });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -188,7 +265,7 @@ export const addNode = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -227,7 +304,7 @@ export const updateNode = async (req, res) => {
     console.log("updateNode req.body:", req.body);
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -274,7 +351,7 @@ export const deleteNode = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -324,7 +401,7 @@ export const addHotspot = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -356,7 +433,7 @@ export const updateHotspot = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -431,7 +508,7 @@ export const deleteHotspot = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -457,7 +534,7 @@ export const addSign = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -480,7 +557,7 @@ export const updateSign = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -512,7 +589,7 @@ export const deleteSign = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -536,7 +613,7 @@ export const deleteTransition = async (req, res) => {
   try {
     const project = await Project.findOne({
       _id: req.params.id,
-      createdBy: req.user._id,
+      ...scopeFilter(req),
     });
     if (!project) return res.status(404).json({ message: "Project not found" });
 

@@ -18,6 +18,17 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': 'http://localhost:5000',
         '/uploads': 'http://localhost:5000',
+        // Landing (landing/ Next.js package) is served through this port so
+        // the whole site lives on :5173 in dev. Requires `npm run dev` in
+        // landing/ (Next dev on :3000). The viewer keeps /tour, /dashboard;
+        // everything below belongs to the landing.
+        '^/$': 'http://localhost:3000',
+        '^/ar(/|$)': 'http://localhost:3000',
+        '/_next': { target: 'http://localhost:3000', ws: true },
+        '/__nextjs': 'http://localhost:3000',
+        '/panos': 'http://localhost:3000',
+        '/robots.txt': 'http://localhost:3000',
+        '/sitemap.xml': 'http://localhost:3000',
       },
     },
     build: {

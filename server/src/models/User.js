@@ -12,10 +12,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
     password: { type: String, required: true, minlength: 8 },
-    // 'admin'  = platform admin (you): full control, admin studio, exports.
-    // 'owner'  = tour owner (client): analytics dashboard + own password only.
-    role: { type: String, enum: ['admin', 'owner'], default: 'owner' },
-    // The admin who created this owner account (null for admins).
+    // 'admin'    = platform admin (you): full control, admin studio, exports.
+    // 'owner'    = tour owner (client): analytics dashboard + own password only.
+    // 'employee' = staff member: admin studio, but only projects assigned to them.
+    role: { type: String, enum: ['admin', 'owner', 'employee'], default: 'owner' },
+    // The admin who created this owner/employee account (null for admins).
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     // Owners get an admin-assigned password and must replace it on first login.
     mustChangePassword: { type: Boolean, default: false },
