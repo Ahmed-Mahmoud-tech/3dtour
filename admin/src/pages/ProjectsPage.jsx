@@ -1,16 +1,24 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext.jsx';
-import { projectApi, mediaApi } from '../api/projectApi.js';
-import { adminApi } from '../api/adminApi.js';
-import { FaPlus, FaEdit, FaTrash, FaGlobe, FaSignOutAlt, FaSyncAlt, FaDownload } from 'react-icons/fa';
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext.jsx";
+import { projectApi, mediaApi } from "../api/projectApi.js";
+import { adminApi } from "../api/adminApi.js";
+import {
+  FaPlus,
+  FaEdit,
+  FaTrash,
+  FaGlobe,
+  FaSignOutAlt,
+  FaSyncAlt,
+  FaDownload,
+} from "react-icons/fa";
 
 export default function ProjectsPage() {
   const { user, logout } = useAuth();
   const [projects, setProjects] = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
+  const [newTitle, setNewTitle] = useState("");
   const [logoFile, setLogoFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -26,7 +34,9 @@ export default function ProjectsPage() {
     }
   };
 
-  useEffect(() => { fetchProjects(); }, []);
+  useEffect(() => {
+    fetchProjects();
+  }, []);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -34,14 +44,17 @@ export default function ProjectsPage() {
     setSubmitting(true);
     try {
       // Upload the client logo first (if provided), then create the project
-      let nadirLogoUrl = '';
+      let nadirLogoUrl = "";
       if (logoFile) {
         const { url } = await mediaApi.uploadImage(logoFile);
         nadirLogoUrl = url;
       }
-      const project = await projectApi.create({ title: newTitle.trim(), nadirLogoUrl });
+      const project = await projectApi.create({
+        title: newTitle.trim(),
+        nadirLogoUrl,
+      });
       setProjects((prev) => [project, ...prev]);
-      setNewTitle('');
+      setNewTitle("");
       setLogoFile(null);
       setCreating(false);
     } catch (err) {
@@ -56,11 +69,18 @@ export default function ProjectsPage() {
     if (exportingId) return;
     setExportingId(project._id);
     try {
-      await adminApi.exportProject(project._id, `${project.info?.title || 'tour'}-export.zip`);
+      await adminApi.exportProject(
+        project._id,
+        `${project.info?.title || "tour"}-export.zip`,
+      );
     } catch (err) {
       // Blob error responses need decoding to show the server's message
       let message = err.message;
-      try { message = JSON.parse(await err.response.data.text()).message; } catch { /* keep */ }
+      try {
+        message = JSON.parse(await err.response.data.text()).message;
+      } catch {
+        /* keep */
+      }
       window.alert(`Export failed: ${message}`);
     } finally {
       setExportingId(null);
@@ -68,7 +88,12 @@ export default function ProjectsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this project and all its data? This cannot be undone.')) return;
+    if (
+      !window.confirm(
+        "Delete this project and all its data? This cannot be undone.",
+      )
+    )
+      return;
     await projectApi.delete(id);
     setProjects((prev) => prev.filter((p) => p._id !== id));
   };
@@ -81,13 +106,23 @@ export default function ProjectsPage() {
           <FaGlobe className="text-blue-400" size={22} />
           <h1 className="text-lg font-bold text-white">360 Tour Admin</h1>
           <nav className="ml-6 flex items-center gap-4 text-sm">
-            <Link to="/projects" className="text-white font-medium">Projects</Link>
-            <Link to="/clients" className="text-gray-400 hover:text-white transition-colors">Clients</Link>
+            <Link to="/projects" className="text-white font-medium">
+              Projects
+            </Link>
+            <Link
+              to="/clients"
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              Clients
+            </Link>
           </nav>
         </div>
         <div className="flex items-center gap-4">
           <span className="text-gray-400 text-sm">{user?.name}</span>
-          <button onClick={logout} className="flex items-center gap-2 text-gray-500 hover:text-white text-sm transition-colors">
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 text-gray-500 hover:text-white text-sm transition-colors"
+          >
             <FaSignOutAlt size={14} />
             Sign out
           </button>
@@ -109,7 +144,10 @@ export default function ProjectsPage() {
 
         {/* Create form */}
         {creating && (
-          <form onSubmit={handleCreate} className="admin-card mb-6 flex flex-col gap-3">
+          <form
+            onSubmit={handleCreate}
+            className="admin-card mb-6 flex flex-col gap-3"
+          >
             <input
               autoFocus
               className="admin-input"
@@ -119,7 +157,8 @@ export default function ProjectsPage() {
             />
             <div>
               <label className="admin-label">
-                Client Logo (shown at the bottom of every sphere — leave empty to use the Gateverse logo)
+                Client Logo (shown at the bottom of every sphere — leave empty
+                to use the Gateverse logo)
               </label>
               <input
                 type="file"
@@ -129,11 +168,22 @@ export default function ProjectsPage() {
               />
             </div>
             <div className="flex justify-end gap-3">
-              <button type="submit" disabled={submitting} className="admin-btn-primary flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="admin-btn-primary flex items-center gap-2"
+              >
                 {submitting && <FaSyncAlt size={12} className="animate-spin" />}
                 Create
               </button>
-              <button type="button" onClick={() => { setCreating(false); setLogoFile(null); }} className="admin-btn-secondary">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreating(false);
+                  setLogoFile(null);
+                }}
+                className="admin-btn-secondary"
+              >
                 Cancel
               </button>
             </div>
@@ -153,10 +203,15 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {projects.map((project) => (
-              <div key={project._id} className="admin-card flex flex-col gap-3 hover:border-gray-700 transition-colors">
+              <div
+                key={project._id}
+                className="admin-card flex flex-col gap-3 hover:border-gray-700 transition-colors"
+              >
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="font-semibold text-white truncate">{project.info?.title}</h3>
+                    <h3 className="font-semibold text-white truncate">
+                      {project.info?.title}
+                    </h3>
                     <p className="text-gray-500 text-xs mt-1">
                       {new Date(project.createdAt).toLocaleDateString()}
                     </p>
@@ -176,9 +231,11 @@ export default function ProjectsPage() {
                     title="Export self-hosted tour (zip)"
                     className="admin-btn-secondary flex items-center gap-1.5 text-xs py-1.5"
                   >
-                    {exportingId === project._id
-                      ? <FaSyncAlt size={11} className="animate-spin" />
-                      : <FaDownload size={11} />}
+                    {exportingId === project._id ? (
+                      <FaSyncAlt size={11} className="animate-spin" />
+                    ) : (
+                      <FaDownload size={11} />
+                    )}
                   </button>
                   <button
                     onClick={() => handleDelete(project._id)}

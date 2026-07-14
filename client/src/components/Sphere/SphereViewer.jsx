@@ -682,9 +682,10 @@ function NadirLogo({ url }) {
     Math.abs(NADIR_Y) * Math.tan(THREE.MathUtils.degToRad(NADIR_COVER_DEG));
 
   return (
-    <mesh position={[0, NADIR_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <circleGeometry args={[radius, 64]} />
+    <mesh position={[0, NADIR_Y - 25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <circleGeometry args={[radius - 5, 64]} />
       <meshBasicMaterial map={texture} transparent />
+      {/* <meshBasicMaterial map={texture} transparent /> */}
     </mesh>
   );
 }

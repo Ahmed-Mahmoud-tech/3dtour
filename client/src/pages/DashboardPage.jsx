@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useParams } from "react-router-dom";
 
 /**
  * Tour-owner dashboard (/dashboard/:tourId).
@@ -9,13 +9,13 @@ import { useParams } from 'react-router-dom';
  * owner opening another tour's URL gets a 403 from /api/dashboard/:tourId.
  */
 
-const API = import.meta.env.VITE_API_URL || '/api';
-const TOKEN_KEY = 'owner_token';
+const API = import.meta.env.VITE_API_URL || "/api";
+const TOKEN_KEY = "owner_token";
 
 // Series colors — validated (dataviz) against the dark surface for lightness,
 // chroma, CVD separation and contrast. Don't swap for lighter tailwind steps.
-const COLOR_VISITORS = '#0d9488';
-const COLOR_SESSIONS = '#8b5cf6';
+const COLOR_VISITORS = "#0d9488";
+const COLOR_SESSIONS = "#8b5cf6";
 
 const authHeaders = () => {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -26,7 +26,7 @@ const apiFetch = async (path, options = {}) => {
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...authHeaders(),
       ...(options.headers || {}),
     },
@@ -40,25 +40,28 @@ const apiFetch = async (path, options = {}) => {
   return body;
 };
 
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
 const dayLabel = (iso) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 function LoginForm({ onLogin }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
+    setError("");
     try {
-      const { token, user } = await apiFetch('/auth/login', {
-        method: 'POST',
+      const { token, user } = await apiFetch("/auth/login", {
+        method: "POST",
         body: JSON.stringify({ email, password }),
       });
       localStorage.setItem(TOKEN_KEY, token);
@@ -72,19 +75,31 @@ function LoginForm({ onLogin }) {
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <form onSubmit={submit} className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-8 flex flex-col gap-4">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-8 flex flex-col gap-4"
+      >
         <h1 className="text-white text-xl font-bold text-center">
           gate<span className="text-teal-400">verse</span>
         </h1>
-        <p className="text-gray-400 text-sm text-center mb-2">Tour dashboard — sign in</p>
+        <p className="text-gray-400 text-sm text-center mb-2">
+          Tour dashboard — sign in
+        </p>
         <input
           className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
-          type="email" placeholder="Email" value={email} required autoFocus
+          type="email"
+          placeholder="Email"
+          value={email}
+          required
+          autoFocus
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
           className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
-          type="password" placeholder="Password" value={password} required
+          type="password"
+          placeholder="Password"
+          value={password}
+          required
           onChange={(e) => setPassword(e.target.value)}
         />
         {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -92,7 +107,7 @@ function LoginForm({ onLogin }) {
           disabled={busy}
           className="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors"
         >
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
     </div>
@@ -102,20 +117,20 @@ function LoginForm({ onLogin }) {
 // ─── Change password (forced on first login, or on demand) ───────────────────
 
 function ChangePasswordForm({ forced, onDone, onCancel }) {
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
-    if (next !== confirm) return setError('New passwords do not match');
+    if (next !== confirm) return setError("New passwords do not match");
     setBusy(true);
-    setError('');
+    setError("");
     try {
-      await apiFetch('/auth/password', {
-        method: 'PUT',
+      await apiFetch("/auth/password", {
+        method: "PUT",
         body: JSON.stringify({ currentPassword: current, newPassword: next }),
       });
       onDone();
@@ -128,30 +143,57 @@ function ChangePasswordForm({ forced, onDone, onCancel }) {
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <form onSubmit={submit} className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-8 flex flex-col gap-4">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-8 flex flex-col gap-4"
+      >
         <h2 className="text-white text-lg font-semibold text-center">
-          {forced ? 'Set your own password' : 'Change password'}
+          {forced ? "Set your own password" : "Change password"}
         </h2>
         {forced && (
           <p className="text-gray-400 text-sm text-center">
-            Your account was created with a temporary password. Please choose a new one to continue.
+            Your account was created with a temporary password. Please choose a
+            new one to continue.
           </p>
         )}
-        <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
-          type="password" placeholder="Current password" value={current} required
-          onChange={(e) => setCurrent(e.target.value)} />
-        <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
-          type="password" placeholder="New password (min 8 chars)" value={next} required minLength={8}
-          onChange={(e) => setNext(e.target.value)} />
-        <input className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
-          type="password" placeholder="Repeat new password" value={confirm} required
-          onChange={(e) => setConfirm(e.target.value)} />
+        <input
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
+          type="password"
+          placeholder="Current password"
+          value={current}
+          required
+          onChange={(e) => setCurrent(e.target.value)}
+        />
+        <input
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
+          type="password"
+          placeholder="New password (min 8 chars)"
+          value={next}
+          required
+          minLength={8}
+          onChange={(e) => setNext(e.target.value)}
+        />
+        <input
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
+          type="password"
+          placeholder="Repeat new password"
+          value={confirm}
+          required
+          onChange={(e) => setConfirm(e.target.value)}
+        />
         {error && <p className="text-red-400 text-sm">{error}</p>}
-        <button disabled={busy} className="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors">
-          {busy ? 'Saving…' : 'Save password'}
+        <button
+          disabled={busy}
+          className="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors"
+        >
+          {busy ? "Saving…" : "Save password"}
         </button>
         {!forced && (
-          <button type="button" onClick={onCancel} className="text-gray-500 hover:text-gray-300 text-sm">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-gray-500 hover:text-gray-300 text-sm"
+          >
             Cancel
           </button>
         )}
@@ -166,15 +208,25 @@ function DailyChart({ days }) {
   const wrapRef = useRef(null);
   const [hover, setHover] = useState(null); // index into days
 
-  const W = 640, H = 200, PL = 36, PR = 12, PT = 10, PB = 22;
-  const innerW = W - PL - PR, innerH = H - PT - PB;
+  const W = 640,
+    H = 200,
+    PL = 36,
+    PR = 12,
+    PT = 10,
+    PB = 22;
+  const innerW = W - PL - PR,
+    innerH = H - PT - PB;
 
-  const yMax = Math.max(1, ...days.map((d) => Math.max(d.uniqueVisitors, d.sessions)));
+  const yMax = Math.max(
+    1,
+    ...days.map((d) => Math.max(d.uniqueVisitors, d.sessions)),
+  );
   const niceMax = Math.ceil(yMax / 4) * 4;
-  const x = (i) => PL + (days.length === 1 ? innerW / 2 : (i / (days.length - 1)) * innerW);
+  const x = (i) =>
+    PL + (days.length === 1 ? innerW / 2 : (i / (days.length - 1)) * innerW);
   const y = (v) => PT + innerH - (v / niceMax) * innerH;
 
-  const line = (key) => days.map((d, i) => `${x(i)},${y(d[key])}`).join(' ');
+  const line = (key) => days.map((d, i) => `${x(i)},${y(d[key])}`).join(" ");
 
   const onMove = (e) => {
     const rect = wrapRef.current.getBoundingClientRect();
@@ -189,11 +241,17 @@ function DailyChart({ days }) {
     <div className="relative" ref={wrapRef}>
       <div className="flex items-center gap-4 mb-2 text-xs text-gray-300">
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLOR_VISITORS }} />
+          <span
+            className="w-2.5 h-2.5 rounded-full"
+            style={{ background: COLOR_VISITORS }}
+          />
           Unique visitors
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLOR_SESSIONS }} />
+          <span
+            className="w-2.5 h-2.5 rounded-full"
+            style={{ background: COLOR_SESSIONS }}
+          />
           Sessions
         </span>
       </div>
@@ -206,27 +264,82 @@ function DailyChart({ days }) {
         {/* grid */}
         {gridVals.map((v) => (
           <g key={v}>
-            <line x1={PL} x2={W - PR} y1={y(v)} y2={y(v)} stroke="#1f2937" strokeWidth="1" />
-            <text x={PL - 6} y={y(v) + 3} textAnchor="end" fontSize="9" fill="#6b7280">{v}</text>
+            <line
+              x1={PL}
+              x2={W - PR}
+              y1={y(v)}
+              y2={y(v)}
+              stroke="#1f2937"
+              strokeWidth="1"
+            />
+            <text
+              x={PL - 6}
+              y={y(v) + 3}
+              textAnchor="end"
+              fontSize="9"
+              fill="#6b7280"
+            >
+              {v}
+            </text>
           </g>
         ))}
         {/* x labels: first / middle / last */}
         {[0, Math.floor((days.length - 1) / 2), days.length - 1]
           .filter((v, i, a) => a.indexOf(v) === i)
           .map((i) => (
-            <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="9" fill="#6b7280">
+            <text
+              key={i}
+              x={x(i)}
+              y={H - 6}
+              textAnchor="middle"
+              fontSize="9"
+              fill="#6b7280"
+            >
               {dayLabel(days[i].date)}
             </text>
           ))}
         {/* series */}
-        <polyline points={line('sessions')} fill="none" stroke={COLOR_SESSIONS} strokeWidth="2" strokeLinejoin="round" />
-        <polyline points={line('uniqueVisitors')} fill="none" stroke={COLOR_VISITORS} strokeWidth="2" strokeLinejoin="round" />
+        <polyline
+          points={line("sessions")}
+          fill="none"
+          stroke={COLOR_SESSIONS}
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        <polyline
+          points={line("uniqueVisitors")}
+          fill="none"
+          stroke={COLOR_VISITORS}
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
         {/* hover crosshair */}
         {hover != null && (
           <g>
-            <line x1={x(hover)} x2={x(hover)} y1={PT} y2={PT + innerH} stroke="#4b5563" strokeWidth="1" />
-            <circle cx={x(hover)} cy={y(days[hover].sessions)} r="4" fill={COLOR_SESSIONS} stroke="#030712" strokeWidth="2" />
-            <circle cx={x(hover)} cy={y(days[hover].uniqueVisitors)} r="4" fill={COLOR_VISITORS} stroke="#030712" strokeWidth="2" />
+            <line
+              x1={x(hover)}
+              x2={x(hover)}
+              y1={PT}
+              y2={PT + innerH}
+              stroke="#4b5563"
+              strokeWidth="1"
+            />
+            <circle
+              cx={x(hover)}
+              cy={y(days[hover].sessions)}
+              r="4"
+              fill={COLOR_SESSIONS}
+              stroke="#030712"
+              strokeWidth="2"
+            />
+            <circle
+              cx={x(hover)}
+              cy={y(days[hover].uniqueVisitors)}
+              r="4"
+              fill={COLOR_VISITORS}
+              stroke="#030712"
+              strokeWidth="2"
+            />
           </g>
         )}
       </svg>
@@ -236,16 +349,23 @@ function DailyChart({ days }) {
           style={{
             left: `${(x(hover) / W) * 100}%`,
             top: 0,
-            transform: x(hover) > W * 0.7 ? 'translateX(-110%)' : 'translateX(10px)',
+            transform:
+              x(hover) > W * 0.7 ? "translateX(-110%)" : "translateX(10px)",
           }}
         >
           <div className="text-gray-400 mb-1">{dayLabel(days[hover].date)}</div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ background: COLOR_VISITORS }} />
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ background: COLOR_VISITORS }}
+            />
             {days[hover].uniqueVisitors} visitors
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ background: COLOR_SESSIONS }} />
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ background: COLOR_SESSIONS }}
+            />
             {days[hover].sessions} sessions
           </div>
         </div>
@@ -284,7 +404,10 @@ function BarList({ title, rows, emptyText }) {
               <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
-                  style={{ width: `${(r.value / max) * 100}%`, background: COLOR_VISITORS }}
+                  style={{
+                    width: `${(r.value / max) * 100}%`,
+                    background: COLOR_VISITORS,
+                  }}
                 />
               </div>
             </li>
@@ -318,7 +441,9 @@ function SubscriptionCard({ sub }) {
           {sub.isActive ? (
             <span className="text-emerald-400">● Active</span>
           ) : (
-            <span className="text-red-400">● {sub.status === 'canceled' ? 'Canceled' : 'Expired'}</span>
+            <span className="text-red-400">
+              ● {sub.status === "canceled" ? "Canceled" : "Expired"}
+            </span>
           )}
         </div>
         <div className="flex justify-between">
@@ -326,8 +451,10 @@ function SubscriptionCard({ sub }) {
           <span className="text-gray-200">{fmtDate(sub.startedAt)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-500">{sub.isActive ? 'Expires' : 'Expired'}</span>
-          <span className={daysLeft <= 7 ? 'text-amber-400' : 'text-gray-200'}>
+          <span className="text-gray-500">
+            {sub.isActive ? "Expires" : "Expired"}
+          </span>
+          <span className={daysLeft <= 7 ? "text-amber-400" : "text-gray-200"}>
             {fmtDate(sub.expiresAt)}
             {sub.isActive && daysLeft >= 0 && ` (${daysLeft}d)`}
           </span>
@@ -340,23 +467,25 @@ function SubscriptionCard({ sub }) {
 // ─── Dashboard body ───────────────────────────────────────────────────────────
 
 const RANGES = [
-  { label: '7 days', days: 7 },
-  { label: '30 days', days: 30 },
-  { label: '90 days', days: 90 },
+  { label: "7 days", days: 7 },
+  { label: "30 days", days: 30 },
+  { label: "90 days", days: 90 },
 ];
 
 function Dashboard({ tourId, me, onLogout, onChangePassword }) {
   const [rangeDays, setRangeDays] = useState(30);
   const [data, setData] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setError("");
     try {
-      const from = new Date(Date.now() - (rangeDays - 1) * 86400000).toISOString().slice(0, 10);
+      const from = new Date(Date.now() - (rangeDays - 1) * 86400000)
+        .toISOString()
+        .slice(0, 10);
       const [dash, sess] = await Promise.all([
         apiFetch(`/dashboard/${tourId}?from=${from}`),
         apiFetch(`/dashboard/${tourId}/sessions?limit=15`),
@@ -370,7 +499,9 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
     }
   }, [tourId, rangeDays]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Fill the requested range with zero-days so the chart has a continuous axis
   const chartDays = useMemo(() => {
@@ -381,7 +512,9 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
     const end = new Date(`${data.range.to}T00:00:00Z`);
     for (let t = start; t <= end; t = new Date(t.getTime() + 86400000)) {
       const iso = t.toISOString().slice(0, 10);
-      out.push(byDate.get(iso) || { date: iso, uniqueVisitors: 0, sessions: 0 });
+      out.push(
+        byDate.get(iso) || { date: iso, uniqueVisitors: 0, sessions: 0 },
+      );
     }
     return out;
   }, [data]);
@@ -406,7 +539,7 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
         return s ? `${s.title} (${s.node})` : id;
       }),
       paths: top(totals.transitions, (key) => {
-        const [from, to] = key.split('>');
+        const [from, to] = key.split(">");
         return `${labels.nodes[from] || from} → ${labels.nodes[to] || to}`;
       }),
     };
@@ -424,7 +557,10 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
     return (
       <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-4 px-4 text-center">
         <p className="text-red-400">{error}</p>
-        <button onClick={onLogout} className="text-gray-400 hover:text-white text-sm underline">
+        <button
+          onClick={onLogout}
+          className="text-gray-400 hover:text-white text-sm underline"
+        >
           Sign in with a different account
         </button>
       </div>
@@ -437,7 +573,9 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
         <div>
           <h1 className="text-white font-bold">
             gate<span className="text-teal-400">verse</span>
-            <span className="text-gray-500 font-normal text-sm ml-3">{data.tour.title}</span>
+            <span className="text-gray-100 font-normal text-sm ml-3">
+              {data.tour.title}
+            </span>
           </h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
@@ -449,11 +587,16 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
           >
             Open tour ↗
           </a>
-          <button onClick={onChangePassword} className="text-gray-400 hover:text-white">
+          <button
+            onClick={onChangePassword}
+            className="text-gray-400 hover:text-white"
+          >
             Change password
           </button>
-          <span className="text-gray-600">{me?.name}</span>
-          <button onClick={onLogout} className="text-gray-500 hover:text-white">Sign out</button>
+          <span className="text-gray-100">{me?.name}</span>
+          <button onClick={onLogout} className="text-gray-300 hover:text-white">
+            Sign out
+          </button>
         </div>
       </header>
 
@@ -466,34 +609,47 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
               onClick={() => setRangeDays(r.days)}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 rangeDays === r.days
-                  ? 'bg-teal-600/20 border-teal-600 text-teal-300'
-                  : 'border-gray-800 text-gray-400 hover:border-gray-600'
+                  ? "bg-teal-600/20 border-teal-600 text-teal-300"
+                  : "border-gray-800 text-gray-400 hover:border-gray-600"
               }`}
             >
               {r.label}
             </button>
           ))}
-          {loading && <span className="text-gray-600 text-xs ml-2">Refreshing…</span>}
+          {loading && (
+            <span className="text-gray-600 text-xs ml-2">Refreshing…</span>
+          )}
         </div>
 
         {/* Stat tiles */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatTile label="Unique visitors" value={data.totals.uniqueVisitors} />
+          <StatTile
+            label="Unique visitors"
+            value={data.totals.uniqueVisitors}
+          />
           <StatTile label="Sessions" value={data.totals.sessions} />
           <StatTile
             label="Hotspot clicks"
-            value={Object.values(data.totals.hotspotClicks).reduce((a, b) => a + b, 0)}
+            value={Object.values(data.totals.hotspotClicks).reduce(
+              (a, b) => a + b,
+              0,
+            )}
           />
           <StatTile
             label="Popup opens"
-            value={Object.values(data.totals.popupOpens).reduce((a, b) => a + b, 0)}
+            value={Object.values(data.totals.popupOpens).reduce(
+              (a, b) => a + b,
+              0,
+            )}
           />
         </div>
 
         {/* Daily chart + subscription */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <h3 className="text-white text-sm font-semibold mb-3">Daily traffic</h3>
+            <h3 className="text-white text-sm font-semibold mb-3">
+              Daily traffic
+            </h3>
             <DailyChart days={chartDays} />
           </div>
           <SubscriptionCard sub={data.subscription} />
@@ -501,21 +657,42 @@ function Dashboard({ tourId, me, onLogout, onChangePassword }) {
 
         {/* Engagement tables */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <BarList title="Most viewed scenes" rows={barRows.scenes} emptyText="No scene views yet." />
-          <BarList title="Hotspot clicks" rows={barRows.hotspots} emptyText="No hotspot clicks yet." />
-          <BarList title="Info popup opens" rows={barRows.popups} emptyText="No popup opens yet." />
-          <BarList title="Popular navigation paths" rows={barRows.paths} emptyText="No navigation yet." />
+          <BarList
+            title="Most viewed scenes"
+            rows={barRows.scenes}
+            emptyText="No scene views yet."
+          />
+          <BarList
+            title="Hotspot clicks"
+            rows={barRows.hotspots}
+            emptyText="No hotspot clicks yet."
+          />
+          <BarList
+            title="Info popup opens"
+            rows={barRows.popups}
+            emptyText="No popup opens yet."
+          />
+          <BarList
+            title="Popular navigation paths"
+            rows={barRows.paths}
+            emptyText="No navigation yet."
+          />
         </div>
 
         {/* Recent sessions */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <h3 className="text-white text-sm font-semibold mb-3">Recent visits</h3>
+          <h3 className="text-white text-sm font-semibold mb-3">
+            Recent visits
+          </h3>
           {sessions.length === 0 ? (
             <p className="text-gray-600 text-sm">No visits recorded yet.</p>
           ) : (
             <ul className="flex flex-col gap-3">
               {sessions.map((s) => (
-                <li key={s._id} className="text-xs border-b border-gray-800 last:border-0 pb-3 last:pb-0">
+                <li
+                  key={s._id}
+                  className="text-xs border-b border-gray-800 last:border-0 pb-3 last:pb-0"
+                >
                   <div className="text-gray-500 mb-1">
                     {new Date(s.startedAt).toLocaleString()} · {s.events} events
                   </div>
@@ -550,7 +727,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return setChecking(false);
-    apiFetch('/auth/me')
+    apiFetch("/auth/me")
       .then(setMe)
       .catch(() => localStorage.removeItem(TOKEN_KEY))
       .finally(() => setChecking(false));
