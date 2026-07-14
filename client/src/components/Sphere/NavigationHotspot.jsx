@@ -43,6 +43,7 @@ export default function NavigationHotspot({ hotspot, onNavigate }) {
       hotspot.videoInitialYawOffset ?? 0,
       reverseVideoUrl,
       hotspot.transitionVideos || [],
+      hotspot.id,
     );
   };
 

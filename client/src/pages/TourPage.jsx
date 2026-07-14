@@ -1,6 +1,7 @@
 import { useRef, useState, useMemo, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useTour } from "../hooks/useTour.js";
+import { useAnalytics } from "../hooks/useAnalytics.js";
 // import { usePreloader } from "../hooks/usePreloader.js";
 import SphereViewer from "../components/Sphere/SphereViewer.jsx";
 import NavigationSidebar from "../components/Sidebar/NavigationSidebar.jsx";
@@ -14,6 +15,7 @@ export default function TourPage() {
 
   // ─── Info popup state (rendered outside Canvas) ───────────────────────────
   const [activePopup, setActivePopup] = useState(null); // popupContent object
+  const activePopupSignIdRef = useRef(null); // sign id for analytics close event
 
   // ─── Camera yaw and pitch preservation across navigation ──────────────────────────────
   const cameraYawRef = useRef(0); // in radians, updated on every drag
@@ -68,6 +70,7 @@ export default function TourPage() {
     activeNodeId,
     loading,
     error,
+    errorReason,
     transition,
     isTransitioning,
     hotspotVisible,
@@ -82,6 +85,21 @@ export default function TourPage() {
     videoQueue,
     videoQueueIndex,
   } = useTour(projectId);
+
+  // ─── Analytics (batched, fire-and-forget) ─────────────────────────────────
+  const track = useAnalytics(projectId, Boolean(project));
+
+  // scene_view on every panorama change; targetId carries the PREVIOUS node so
+  // the server can count the from→to navigation edge.
+  const prevNodeIdRef = useRef(null);
+  useEffect(() => {
+    if (!activeNodeId) return;
+    track("scene_view", {
+      nodeId: activeNodeId,
+      targetId: prevNodeIdRef.current || "",
+    });
+    prevNodeIdRef.current = activeNodeId;
+  }, [activeNodeId, track]);
 
   // ─── Current video segment — DERIVED synchronously from the queue ──────────
   // The URL, yaw and queue index therefore always update together in the same
@@ -156,10 +174,15 @@ export default function TourPage() {
     videoYawOffset = 0,
     reverseVideoUrl = null,
     transitionVideos = [],
+    hotspotId = "",
   ) => {
     if (!project) return;
     if (isPreRender) return; // Prevent multiple simultaneous preloads
     setIsPreRender(true);
+
+    if (hotspotId) {
+      track("hotspot_click", { nodeId: activeNodeId, targetId: hotspotId });
+    }
 
     const targetNode = project.nodes?.[targetNodeId];
 
@@ -317,6 +340,21 @@ export default function TourPage() {
   }
 
   if (error) {
+    if (errorReason === "subscription_expired") {
+      return (
+        <div className="flex h-full flex-col items-center justify-center bg-black gap-4 px-6 text-center">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
+            <rect x="3" y="11" width="18" height="10" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <p className="text-white text-xl font-semibold">This tour is currently unavailable</p>
+          <p className="text-white/50 text-sm max-w-md">
+            The subscription for this virtual tour has ended. If you are the tour
+            owner, please contact your provider to renew it.
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="flex h-full items-center justify-center bg-black">
         <p className="text-red-400 text-lg">{error}</p>
@@ -339,7 +377,11 @@ export default function TourPage() {
         transitionBackdrops={transitionBackdrops} // start/end panoramas shown behind the video
         hotspotVisible={hotspotVisible}
         onNavigate={handleNavigate}
-        onSignClick={(content) => setActivePopup(content)}
+        onSignClick={(content, signId) => {
+          setActivePopup(content);
+          activePopupSignIdRef.current = signId || null;
+          if (signId) track("popup_open", { nodeId: activeNodeId, targetId: signId });
+        }}
         preservedCameraYaw={preservedCameraYaw}
         preservedCameraPitch={preservedCameraPitch}
         onYawChange={(yawRad) => {
@@ -442,7 +484,19 @@ export default function TourPage() {
 
       {/* ── Info sign popup (rendered outside Canvas for correct layering) ── */}
       {activePopup && (
-        <InfoPopup content={activePopup} onClose={() => setActivePopup(null)} />
+        <InfoPopup
+          content={activePopup}
+          onClose={() => {
+            if (activePopupSignIdRef.current) {
+              track("popup_close", {
+                nodeId: activeNodeId,
+                targetId: activePopupSignIdRef.current,
+              });
+              activePopupSignIdRef.current = null;
+            }
+            setActivePopup(null);
+          }}
+        />
       )}
     </div>
   );

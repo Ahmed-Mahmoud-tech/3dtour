@@ -18,7 +18,11 @@ export function AuthProvider({ children }) {
 
     axios
       .get(`${API_BASE}/auth/me`)
-      .then(({ data }) => setUser(data))
+      .then(({ data }) => {
+        // The admin studio is admins-only; owners use the client dashboard
+        if (data.role !== 'admin') throw new Error('not admin');
+        setUser(data);
+      })
       .catch(() => {
         // Token expired or invalid — clear it
         localStorage.removeItem('admin_token');
@@ -30,6 +34,11 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await axios.post(`${API_BASE}/auth/login`, { email, password });
+    if (data.user?.role !== 'admin') {
+      const err = new Error('This panel is for administrators only.');
+      err.response = { data: { message: err.message } };
+      throw err;
+    }
     localStorage.setItem('admin_token', data.token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
     setToken(data.token);

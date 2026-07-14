@@ -3,6 +3,9 @@ import axios from "axios";
 import { useSmartPreloader } from "./useSmartPreloader";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
+// Static (self-hosted export) build: the tour ships as ./tour.json next to
+// index.html, with media rewritten to relative ./media/... paths.
+const IS_STATIC = import.meta.env.VITE_STATIC_TOUR === "1";
 
 /**
  * useTour — Central state machine for the 360 tour viewer.
@@ -21,6 +24,7 @@ export function useTour(projectId) {
   const [activeNodeId, setActiveNodeId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [errorReason, setErrorReason] = useState(null); // e.g. 'subscription_expired'
 
   // Smart preloader
   const { preloadRemaining, cancelBackgroundLoading, preloadNextAssets } =
@@ -43,13 +47,13 @@ export function useTour(projectId) {
 
   // ─── Fetch project (NO blocking preload - instant start like old usePreloader) ────
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId && !IS_STATIC) return;
 
     const fetchProject = async () => {
       try {
         setLoading(true);
         const { data } = await axios.get(
-          `${API_BASE}/projects/${projectId}/public`,
+          IS_STATIC ? "./tour.json" : `${API_BASE}/projects/${projectId}/public`,
         );
         setProject(data);
 
@@ -58,6 +62,7 @@ export function useTour(projectId) {
         setActiveNodeId(initialId);
       } catch (err) {
         setError(err.response?.data?.message || "Failed to load tour");
+        setErrorReason(err.response?.data?.reason || null);
       } finally {
         setLoading(false);
       }
@@ -215,6 +220,7 @@ export function useTour(projectId) {
     activeNodeId,
     loading,
     error,
+    errorReason,
     transition,
     isTransitioning,
     hotspotVisible,

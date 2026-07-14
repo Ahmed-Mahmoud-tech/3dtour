@@ -3,6 +3,7 @@ import { protect } from '../middleware/auth.js';
 import {
   getProjects,
   getProject,
+  getPublicProject,
   createProject,
   updateProject,
   deleteProject,
@@ -20,14 +21,14 @@ import {
 
 const router = Router();
 
-// Public route — viewer fetches project by ID
-router.get('/:id/public', getProject);
+// Public route — viewer fetches project by ID (subscription-gated)
+router.get('/:id/public', getPublicProject);
 
 // Protected routes — admin CRUD
 router.use(protect);
 
 router.route('/').get(getProjects).post(createProject);
-router.route('/:id').put(updateProject).delete(deleteProject);
+router.route('/:id').get(getProject).put(updateProject).delete(deleteProject);
 
 // Node management
 router.post('/:id/nodes', addNode);

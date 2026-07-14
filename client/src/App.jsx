@@ -1,5 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import TourPage from './pages/TourPage.jsx';
+
+// Owner dashboard is code-split — visitors loading a tour never pay for it.
+const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx'));
 
 // The marketing site lives in the separate landing/ Next.js package.
 // In production it is served at the domain root; this app only owns /tour/*.
@@ -19,13 +23,35 @@ function ViewerHome() {
   );
 }
 
+// Static export build: the whole app IS the tour — no landing, no dashboard.
+const IS_STATIC = import.meta.env.VITE_STATIC_TOUR === '1';
+
 export default function App() {
+  if (IS_STATIC) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="*" element={<TourPage />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
+
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<ViewerHome />} />
         {/* /tour/:projectId — main viewer route */}
         <Route path="/tour/:projectId" element={<TourPage />} />
+        {/* /dashboard/:tourId — tour-owner analytics (login-gated inside) */}
+        <Route
+          path="/dashboard/:tourId"
+          element={
+            <Suspense fallback={null}>
+              <DashboardPage />
+            </Suspense>
+          }
+        />
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import Project from "../models/Project.js";
+import Subscription from "../models/Subscription.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,7 +33,7 @@ const hotspotId = () => `nav_${uuidv4().replace(/-/g, "").slice(0, 12)}`;
 export const getProjects = async (req, res) => {
   try {
     const projects = await Project.find({ createdBy: req.user._id })
-      .select("info settings.initialNodeId createdAt updatedAt")
+      .select("info settings.initialNodeId owner createdAt updatedAt")
       .sort("-createdAt");
     res.json(projects);
   } catch (err) {
@@ -40,11 +41,38 @@ export const getProjects = async (req, res) => {
   }
 };
 
-// GET /api/projects/:id  (public — no auth needed for viewer)
+// GET /api/projects/:id  (protected — studio reads)
 export const getProject = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
+    res.json(project);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/projects/:id/public  (viewer — no auth, but subscription-gated)
+// Tours assigned to an owner are only served while that owner's subscription
+// is active. Unassigned tours (admin-internal/demos) are always served.
+export const getPublicProject = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    if (project.owner) {
+      const sub = await Subscription.findOne({ owner: project.owner })
+        .select("status expiresAt")
+        .lean();
+      const active = sub && sub.status === "active" && sub.expiresAt > new Date();
+      if (!active) {
+        return res.status(403).json({
+          message: "This tour is currently unavailable",
+          reason: "subscription_expired",
+        });
+      }
+    }
+
     res.json(project);
   } catch (err) {
     res.status(500).json({ message: err.message });

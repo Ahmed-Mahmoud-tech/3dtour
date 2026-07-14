@@ -1,10 +1,4 @@
-import {
-  useRef,
-  useEffect,
-  useCallback,
-  useState,
-  Suspense,
-} from "react";
+import { useRef, useEffect, useCallback, useState, Suspense } from "react";
 import { Canvas, useThree, useFrame, invalidate } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -263,7 +257,11 @@ function PanoramaControls({
   // tour viewer. Pinch on touch devices does the same (see onTouchMove).
   const zoomBy = useCallback(
     (deltaFov) => {
-      camera.fov = THREE.MathUtils.clamp(camera.fov + deltaFov, MIN_FOV, MAX_FOV);
+      camera.fov = THREE.MathUtils.clamp(
+        camera.fov + deltaFov,
+        MIN_FOV,
+        MAX_FOV,
+      );
       camera.updateProjectionMatrix();
       invalidate();
     },

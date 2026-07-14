@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { projectApi, mediaApi } from '../api/projectApi.js';
-import { FaPlus, FaEdit, FaTrash, FaGlobe, FaSignOutAlt, FaSyncAlt } from 'react-icons/fa';
+import { adminApi } from '../api/adminApi.js';
+import { FaPlus, FaEdit, FaTrash, FaGlobe, FaSignOutAlt, FaSyncAlt, FaDownload } from 'react-icons/fa';
 
 export default function ProjectsPage() {
   const { user, logout } = useAuth();
@@ -50,6 +51,22 @@ export default function ProjectsPage() {
     }
   };
 
+  const [exportingId, setExportingId] = useState(null);
+  const handleExport = async (project) => {
+    if (exportingId) return;
+    setExportingId(project._id);
+    try {
+      await adminApi.exportProject(project._id, `${project.info?.title || 'tour'}-export.zip`);
+    } catch (err) {
+      // Blob error responses need decoding to show the server's message
+      let message = err.message;
+      try { message = JSON.parse(await err.response.data.text()).message; } catch { /* keep */ }
+      window.alert(`Export failed: ${message}`);
+    } finally {
+      setExportingId(null);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this project and all its data? This cannot be undone.')) return;
     await projectApi.delete(id);
@@ -63,6 +80,10 @@ export default function ProjectsPage() {
         <div className="flex items-center gap-3">
           <FaGlobe className="text-blue-400" size={22} />
           <h1 className="text-lg font-bold text-white">360 Tour Admin</h1>
+          <nav className="ml-6 flex items-center gap-4 text-sm">
+            <Link to="/projects" className="text-white font-medium">Projects</Link>
+            <Link to="/clients" className="text-gray-400 hover:text-white transition-colors">Clients</Link>
+          </nav>
         </div>
         <div className="flex items-center gap-4">
           <span className="text-gray-400 text-sm">{user?.name}</span>
@@ -149,6 +170,16 @@ export default function ProjectsPage() {
                     <FaEdit size={11} />
                     Edit
                   </Link>
+                  <button
+                    onClick={() => handleExport(project)}
+                    disabled={exportingId === project._id}
+                    title="Export self-hosted tour (zip)"
+                    className="admin-btn-secondary flex items-center gap-1.5 text-xs py-1.5"
+                  >
+                    {exportingId === project._id
+                      ? <FaSyncAlt size={11} className="animate-spin" />
+                      : <FaDownload size={11} />}
+                  </button>
                   <button
                     onClick={() => handleDelete(project._id)}
                     className="admin-btn-danger flex items-center gap-1.5 text-xs py-1.5"

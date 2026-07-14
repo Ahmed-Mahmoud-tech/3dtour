@@ -11,7 +11,7 @@ export default function InfoSign({ sign, onOpenPopup }) {
   return (
     <Html position={position} center zIndexRange={[1, 10]} style={{ pointerEvents: 'auto' }}>
       <div
-        onClick={(e) => { e.stopPropagation(); onOpenPopup(sign.popupContent); }}
+        onClick={(e) => { e.stopPropagation(); onOpenPopup(sign.popupContent, sign.id); }}
         className="relative cursor-pointer flex items-center justify-center rounded-full
                    bg-blue-500/70 backdrop-blur-sm border-2 border-white/70
                    hover:bg-blue-400/80 hover:scale-110 transition-all duration-200"

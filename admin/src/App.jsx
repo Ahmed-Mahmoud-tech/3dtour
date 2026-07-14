@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext.jsx';
 import ProtectedRoute from './components/Auth/ProtectedRoute.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import ProjectsPage from './pages/ProjectsPage.jsx';
+import ClientsPage from './pages/ClientsPage.jsx';
 import ProjectEditPage from './pages/ProjectEditPage.jsx';
 import StudioPage from './pages/StudioPage.jsx';
 
@@ -15,6 +16,10 @@ export default function App() {
 
           <Route path="/projects" element={
             <ProtectedRoute><ProjectsPage /></ProtectedRoute>
+          } />
+
+          <Route path="/clients" element={
+            <ProtectedRoute><ClientsPage /></ProtectedRoute>
           } />
 
           <Route path="/projects/:projectId" element={
