@@ -92,8 +92,8 @@ The client app also hosts the **tour-owner dashboard** at `/dashboard/:tourId` (
 
 ## Gotchas
 
-- **`* copy.jsx` / `* copy 2.jsx` files exist** in `client/src` (e.g. `SphereViewer copy 2.jsx`, `TourPage copy.jsx`, `useTour copy.js`). These are stale working duplicates, not imported by the app. Edit the non-`copy` file; don't be misled by them when searching.
-- Debug `console.log`s with placeholder strings (`"2222"`, `"5555"`) remain in `useTour.js`.
+- Auth login/register are rate-limited (10 failed attempts / 15 min per IP); `listOwners`/`listEmployees` use `.lean()` which bypasses the User model's password-stripping `toJSON` — any new `.lean()` User query must add `.select('-password')`.
+- `deleteUploadByUrl` in [projectController.js](server/src/controllers/projectController.js) guards against path traversal (resolve + prefix check against `UPLOADS_ROOT`) — reuse it for any new file-deletion path; don't hand-roll.
 - Admin stores its JWT in `localStorage` under `admin_token` and sets `axios.defaults.headers.common.Authorization` globally ([admin AuthContext](admin/src/context/AuthContext.jsx)); the owner dashboard in the client app uses a **separate** `owner_token` and plain `fetch`. The admin AuthContext also rejects non-admin logins client-side.
 - CORS origins default to the two Vite ports; override with `ALLOWED_ORIGINS` (comma-separated) in server `.env`.
 - Mongoose Map fields can't contain `.` or `$` in keys — analytics `$inc` paths are sanitized in [analyticsController.js](server/src/controllers/analyticsController.js) (`safeKey`); keep that if you add new rollup fields.

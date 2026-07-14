@@ -2,7 +2,6 @@ import { useRef, useState, useMemo, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useTour } from "../hooks/useTour.js";
 import { useAnalytics } from "../hooks/useAnalytics.js";
-// import { usePreloader } from "../hooks/usePreloader.js";
 import SphereViewer from "../components/Sphere/SphereViewer.jsx";
 import NavigationSidebar from "../components/Sidebar/NavigationSidebar.jsx";
 import InfoPopup from "../components/Popup/InfoPopup.jsx";
@@ -14,7 +13,6 @@ const IS_STATIC = import.meta.env.VITE_STATIC_TOUR === "1";
 
 export default function TourPage() {
   const { projectId } = useParams();
-  // const { preloadNextAssets } = usePreloader();
 
   // ─── Info popup state (rendered outside Canvas) ───────────────────────────
   const [activePopup, setActivePopup] = useState(null); // popupContent object

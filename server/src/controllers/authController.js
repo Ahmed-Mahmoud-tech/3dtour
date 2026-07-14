@@ -17,7 +17,7 @@ export const register = async (req, res) => {
 
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password)
+    if ([name, email, password].some((f) => typeof f !== 'string' || !f.trim()))
       return res.status(400).json({ message: 'Name, email and password are required' });
 
     if (password.length < 8)
@@ -37,10 +37,11 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
+    // Strings only — an object here would become a MongoDB query operator
+    if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
       return res.status(400).json({ message: 'Email and password are required' });
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user || !(await user.comparePassword(password)))
       return res.status(401).json({ message: 'Invalid credentials' });
 
@@ -68,7 +69,8 @@ export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword)
+    if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' ||
+        !currentPassword || !newPassword)
       return res.status(400).json({ message: 'Current and new password are required' });
 
     if (newPassword.length < 8)

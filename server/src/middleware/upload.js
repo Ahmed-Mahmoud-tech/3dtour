@@ -39,7 +39,10 @@ const imageFilter = (_req, file, cb) => {
 
 const videoFilter = (_req, file, cb) => {
   const allowed = /mp4|webm|mov/;
-  if (allowed.test(path.extname(file.originalname).toLowerCase())) {
+  if (
+    allowed.test(path.extname(file.originalname).toLowerCase()) &&
+    file.mimetype.startsWith('video/')
+  ) {
     cb(null, true);
   } else {
     cb(new Error('Only MP4, WebM, and MOV video files are allowed'));
@@ -48,7 +51,10 @@ const videoFilter = (_req, file, cb) => {
 
 const audioFilter = (_req, file, cb) => {
   const allowed = /mp3|wav|ogg|aac/;
-  if (allowed.test(path.extname(file.originalname).toLowerCase())) {
+  if (
+    allowed.test(path.extname(file.originalname).toLowerCase()) &&
+    file.mimetype.startsWith('audio/')
+  ) {
     cb(null, true);
   } else {
     cb(new Error('Only MP3, WAV, OGG, and AAC audio files are allowed'));

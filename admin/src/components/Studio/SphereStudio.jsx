@@ -225,20 +225,6 @@ function StudioScene({
 }) {
   const handleClick = useCallback(
     (e) => {
-      console.log(
-        "panoramaUrl",
-        panoramaUrl,
-        "placementMode",
-        placementMode,
-        "onSphereClick",
-        onSphereClick,
-        "node",
-        node,
-        "previewPin",
-        previewPin,
-        "onEditItem",
-        onEditItem,
-      );
       if (!placementMode) return;
       e.stopPropagation();
       const point = e.point;

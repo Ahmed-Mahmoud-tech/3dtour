@@ -1,5 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import DOMPurify from 'dompurify';
+
+// Links opened in a new tab must not get a handle back to the tour window
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A' && node.getAttribute('target') === '_blank') {
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
 
 /**
  * InfoPopup
@@ -27,14 +34,18 @@ export default function InfoPopup({ content, onClose }) {
     if (e.target === overlayRef.current) onClose();
   };
 
-  // Sanitize HTML content — prevent XSS
-  const safeHtml = DOMPurify.sanitize(content?.htmlContent || '', {
-    ALLOWED_TAGS: ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'ul', 'ol', 'li',
-                   'strong', 'em', 'b', 'i', 'a', 'br', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                   'img', 'figure', 'figcaption', 'blockquote', 'code', 'pre'],
-    ALLOWED_ATTR: ['class', 'style', 'href', 'src', 'alt', 'title', 'target'],
-    FORCE_BODY: true,
-  });
+  // Sanitize HTML content — prevent XSS (memoized: sanitizing on every render is wasted work)
+  const safeHtml = useMemo(
+    () =>
+      DOMPurify.sanitize(content?.htmlContent || '', {
+        ALLOWED_TAGS: ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'ul', 'ol', 'li',
+                       'strong', 'em', 'b', 'i', 'a', 'br', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+                       'img', 'figure', 'figcaption', 'blockquote', 'code', 'pre'],
+        ALLOWED_ATTR: ['class', 'style', 'href', 'src', 'alt', 'title', 'target'],
+        FORCE_BODY: true,
+      }),
+    [content?.htmlContent]
+  );
 
   return (
     <div

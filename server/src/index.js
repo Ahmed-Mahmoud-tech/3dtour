@@ -26,16 +26,28 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ['http://localhost:5173', 'http://localhost:5174'];
 
+app.disable('x-powered-by');
+
 app.use(
   cors({
     origin: (origin, cb) => {
       // Allow requests with no origin (e.g., Postman, server-to-server)
       if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-      cb(new Error('Not allowed by CORS'));
+      const err = new Error('Not allowed by CORS');
+      err.status = 403; // a disallowed origin is a client error, not a server crash
+      cb(err);
     },
     credentials: true,
   })
 );
+
+// Baseline security headers (API + uploaded files)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -66,7 +78,9 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Da
 app.use((err, _req, res, _next) => {
   console.error(err.stack);
   const status = err.status || 500;
-  res.status(status).json({ message: err.message || 'Internal server error' });
+  // Never leak internal error details (stack-adjacent messages) on 500s
+  const message = status >= 500 ? 'Internal server error' : err.message;
+  res.status(status).json({ message });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────

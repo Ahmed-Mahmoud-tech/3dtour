@@ -147,12 +147,24 @@ export const uploadTransitionVideo = async (req, res) => {
 // ─── Video Streaming (HTTP Range support) ─────────────────────────────────────
 
 // GET /api/media/stream/:folder/:filename
+const STREAM_FOLDERS = new Set(['videos', 'audio', 'panoramas', 'images']);
+const STREAM_TYPES = {
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.aac': 'audio/aac',
+};
+
 export const streamVideo = (req, res) => {
   const { folder, filename } = req.params;
 
-  // Prevent path traversal attacks
+  // Prevent path traversal attacks; only real upload folders are streamable
   const safeFolder = path.basename(folder);
   const safeFilename = path.basename(filename);
+  if (!STREAM_FOLDERS.has(safeFolder)) return res.status(404).json({ message: 'File not found' });
   const filePath = path.join(UPLOADS_ROOT, safeFolder, safeFilename);
 
   if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'File not found' });
@@ -160,13 +172,14 @@ export const streamVideo = (req, res) => {
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
+  const contentType = STREAM_TYPES[path.extname(safeFilename).toLowerCase()] || 'video/mp4';
 
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const start = parseInt(parts[0], 10) || 0;
+    const end = Math.min(parts[1] ? parseInt(parts[1], 10) : fileSize - 1, fileSize - 1);
 
-    if (start >= fileSize) {
+    if (start >= fileSize || start > end) {
       return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
     }
 
@@ -177,13 +190,14 @@ export const streamVideo = (req, res) => {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': chunkSize,
-      'Content-Type': 'video/mp4',
+      'Content-Type': contentType,
     });
     fileStream.pipe(res);
   } else {
     res.writeHead(200, {
       'Content-Length': fileSize,
-      'Content-Type': 'video/mp4',
+      'Accept-Ranges': 'bytes',
+      'Content-Type': contentType,
     });
     fs.createReadStream(filePath).pipe(res);
   }

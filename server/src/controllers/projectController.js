@@ -15,7 +15,9 @@ const deleteUploadByUrl = (url) => {
     // Expect public urls like '/uploads/panoramas/xyz.jpg'
     if (!url.startsWith('/uploads/')) return;
     const rel = url.replace(/^\/uploads\//, '');
-    const filePath = path.join(UPLOADS_ROOT, rel);
+    const filePath = path.resolve(UPLOADS_ROOT, rel);
+    // A crafted url like '/uploads/../../x' must never escape the uploads dir
+    if (!filePath.startsWith(path.resolve(UPLOADS_ROOT) + path.sep)) return;
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   } catch (err) {
     console.error('Failed to delete file for url', url, err.message);
@@ -141,7 +143,12 @@ export const getPublicProject = async (req, res) => {
       }
     }
 
-    res.json(project);
+    // Internal ownership/assignment fields are nobody's business on a public route
+    const tour = project.toJSON();
+    delete tour.createdBy;
+    delete tour.owner;
+    delete tour.assignedTo;
+    res.json(tour);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -301,7 +308,6 @@ export const addNode = async (req, res) => {
 // PUT /api/projects/:id/nodes/:nodeId
 export const updateNode = async (req, res) => {
   try {
-    console.log("updateNode req.body:", req.body);
     const project = await Project.findOne({
       _id: req.params.id,
       ...scopeFilter(req),
@@ -319,7 +325,6 @@ export const updateNode = async (req, res) => {
       : existingNode;
 
     const updateData = { ...req.body };
-    console.log("Parsed updateData:", updateData);
 
     // Ensure initialYawOffset is properly parsed as a number
     if (updateData.initialYawOffset !== undefined) {

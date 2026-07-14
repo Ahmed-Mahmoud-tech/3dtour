@@ -12,6 +12,11 @@ const addToPlan = (from, plan) => {
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// name/email/password must be non-empty strings (objects would reach Mongo as
+// query operators; anything else would blow up bcrypt).
+const validCredentials = (...fields) =>
+  fields.every((f) => typeof f === 'string' && f.trim());
+
 // Shared list-query helpers: ?q searches name/email, ?page&limit paginate.
 // Without `page` the caller gets the legacy full array.
 const userSearchFilter = (role, q) => {
@@ -37,12 +42,12 @@ export const createOwner = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password)
+    if (!validCredentials(name, email, password))
       return res.status(400).json({ message: 'Name, email and password are required' });
     if (password.length < 8)
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
 
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
     if (existing) return res.status(409).json({ message: 'Email already registered' });
 
     const owner = await User.create({
@@ -68,7 +73,8 @@ export const listOwners = async (req, res) => {
     const filter = userSearchFilter('owner', req.query.q);
     const { paginated, page, limit } = pageParams(req);
 
-    let query = User.find(filter).sort({ createdAt: -1 });
+    // .lean() bypasses the model's toJSON, so exclude the hash explicitly
+    let query = User.find(filter).select('-password').sort({ createdAt: -1 });
     if (paginated) query = query.skip((page - 1) * limit).limit(limit);
     const [owners, total] = await Promise.all([
       query.lean(),
@@ -135,7 +141,7 @@ export const updateOwner = async (req, res) => {
 export const resetOwnerPassword = async (req, res) => {
   try {
     const { password } = req.body;
-    if (!password || password.length < 8)
+    if (typeof password !== 'string' || password.length < 8)
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
 
     const owner = await User.findOne({ _id: req.params.id, role: 'owner' });
@@ -247,12 +253,12 @@ export const createEmployee = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password)
+    if (!validCredentials(name, email, password))
       return res.status(400).json({ message: 'Name, email and password are required' });
     if (password.length < 8)
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
 
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
     if (existing) return res.status(409).json({ message: 'Email already registered' });
 
     const employee = await User.create({
@@ -276,7 +282,8 @@ export const listEmployees = async (req, res) => {
     const filter = userSearchFilter('employee', req.query.q);
     const { paginated, page, limit } = pageParams(req);
 
-    let query = User.find(filter).sort({ createdAt: -1 });
+    // .lean() bypasses the model's toJSON, so exclude the hash explicitly
+    let query = User.find(filter).select('-password').sort({ createdAt: -1 });
     if (paginated) query = query.skip((page - 1) * limit).limit(limit);
     const [employees, total] = await Promise.all([
       query.lean(),
@@ -330,7 +337,7 @@ export const updateEmployee = async (req, res) => {
 export const resetEmployeePassword = async (req, res) => {
   try {
     const { password } = req.body;
-    if (!password || password.length < 8)
+    if (typeof password !== 'string' || password.length < 8)
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
 
     const employee = await User.findOne({ _id: req.params.id, role: 'employee' });

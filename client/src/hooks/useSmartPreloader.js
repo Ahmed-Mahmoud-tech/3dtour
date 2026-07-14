@@ -238,10 +238,6 @@ export function useSmartPreloader() {
         return; // Silent - no console spam
       }
 
-      console.log(
-        `🔄 Background preload: ${remaining.length} neighbors (silent, no lag)`,
-      );
-
       // Load ONE node at a time with 3-second delays (very gentle)
       for (let i = 0; i < remaining.length; i++) {
         // Check if loading was cancelled
