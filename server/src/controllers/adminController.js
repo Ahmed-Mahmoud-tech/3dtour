@@ -209,6 +209,7 @@ export const upsertSubscription = async (req, res) => {
     sub.plan = plan;
     sub.status = 'active';
     sub.expiresAt = expiresAt ? new Date(expiresAt) : addToPlan(base, plan);
+    sub.remindersSent = []; // new period → expiry reminders arm again
     sub.history.push({
       action: planChanged ? 'plan_changed' : 'renewed',
       plan,
@@ -233,6 +234,7 @@ export const setSubscriptionStatus = async (req, res) => {
     if (!sub) return res.status(404).json({ message: 'Subscription not found' });
 
     sub.status = status;
+    if (status === 'active') sub.remindersSent = []; // reactivation re-arms reminders
     sub.history.push({
       action: status === 'canceled' ? 'canceled' : 'reactivated',
       by: req.user._id,

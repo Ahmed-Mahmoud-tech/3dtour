@@ -190,53 +190,90 @@ export default function TourPage({ projectId }) {
     const targetNode = project.nodes?.[targetNodeId];
 
     // ─── Build the video queue ─────────────────────────────────────────────
+    // Every segment prefers the server-baked `_ramped` variant (the speed
+    // wave is inside the file — see server/src/config/speedRamp.js); the
+    // original clip is the fallback for videos processed before the bake
+    // pipeline existed. The viewer plays whichever file at plain 1x.
+    const asSegment = (baseUrl, rampedUrl, yawOffset, startNodeId = "") =>
+      baseUrl
+        ? {
+            videoUrl: rampedUrl || baseUrl,
+            yawOffset: yawOffset ?? 0,
+            startNodeId,
+          }
+        : null;
+
     let resolvedQueue = [];
 
     if (transitionVideos.length > 0) {
       // Multi-video: sort by order, resolve URLs based on play direction
       const sorted = [...transitionVideos].sort((a, b) => a.order - b.order);
-      resolvedQueue = sorted.map((v) => ({
-        videoUrl: playMode === "backward"
-          ? (v.reverseVideoUrl || v.videoUrl)
-          : v.videoUrl,
-        yawOffset: v.yawOffset ?? 0,
-        startNodeId: v.startNodeId || "",
-      })).filter((v) => v.videoUrl);
+      resolvedQueue = sorted
+        .map((v) =>
+          playMode === "backward"
+            ? asSegment(
+                v.reverseVideoUrl || v.videoUrl,
+                v.reverseVideoUrl ? v.reverseRampedVideoUrl : v.rampedVideoUrl,
+                v.yawOffset,
+                v.startNodeId || "",
+              )
+            : asSegment(
+                v.videoUrl,
+                v.rampedVideoUrl,
+                v.yawOffset,
+                v.startNodeId || "",
+              ),
+        )
+        .filter(Boolean);
     } else {
       // Legacy single-video path
-      let resolvedUrl;
+      const clickedHotspot = activeNode?.navigationHotspots?.find(
+        (h) => h.id === hotspotId,
+      );
+      const sharedTransition = project.transitions?.[transitionId];
+      let resolvedUrl = null;
+      let resolvedRampedUrl = null;
 
       if (playMode === "backward") {
         // Try reverse URL from the backward hotspot itself or its shared transition record
-        let resolvedReverse =
-          reverseVideoUrl ||
-          project.transitions?.[transitionId]?.reverseVideoUrl ||
-          null;
-
-        // Auto-lookup: find the corresponding forward hotspot on the target node
-        if (!resolvedReverse) {
+        if (reverseVideoUrl) {
+          resolvedUrl = reverseVideoUrl;
+          resolvedRampedUrl =
+            clickedHotspot?.reverseRampedTransitionVideoUrl ||
+            sharedTransition?.reverseRampedVideoUrl ||
+            null;
+        } else if (sharedTransition?.reverseVideoUrl) {
+          resolvedUrl = sharedTransition.reverseVideoUrl;
+          resolvedRampedUrl = sharedTransition.reverseRampedVideoUrl || null;
+        } else {
+          // Auto-lookup: find the corresponding forward hotspot on the target node
           const targetNodeData = project.nodes?.[targetNodeId];
           const forwardHotspot = targetNodeData?.navigationHotspots?.find(
             (hs) => hs.targetNodeId === activeNodeId,
           );
           if (forwardHotspot) {
-            resolvedReverse =
+            const forwardTransition =
+              project.transitions?.[forwardHotspot.transitionId];
+            resolvedUrl =
               forwardHotspot.reverseTransitionVideoUrl ||
-              project.transitions?.[forwardHotspot.transitionId]
-                ?.reverseVideoUrl ||
+              forwardTransition?.reverseVideoUrl ||
+              null;
+            resolvedRampedUrl =
+              forwardHotspot.reverseRampedTransitionVideoUrl ||
+              forwardTransition?.reverseRampedVideoUrl ||
               null;
           }
         }
-
-        resolvedUrl = resolvedReverse || null;
       } else {
-        resolvedUrl =
-          videoUrl || project.transitions?.[transitionId]?.videoUrl || null;
+        resolvedUrl = videoUrl || sharedTransition?.videoUrl || null;
+        resolvedRampedUrl =
+          clickedHotspot?.rampedTransitionVideoUrl ||
+          sharedTransition?.rampedVideoUrl ||
+          null;
       }
 
-      if (resolvedUrl) {
-        resolvedQueue = [{ videoUrl: resolvedUrl, yawOffset: videoYawOffset }];
-      }
+      const segment = asSegment(resolvedUrl, resolvedRampedUrl, videoYawOffset);
+      if (segment) resolvedQueue = [segment];
     }
 
     // The destination node of segment i is the NEXT segment's start point,

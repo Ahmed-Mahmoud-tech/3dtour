@@ -4,7 +4,14 @@ import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import { v4 as uuidv4 } from 'uuid';
 import Project from '../models/Project.js';
-import { optimizePanorama, optimizeVideoInPlace } from '../utils/mediaOptimizer.js';
+import {
+  optimizePanorama,
+  optimizeVideoInPlace,
+  optimizeImage,
+  optimizeAudio,
+  probeVideo,
+} from '../utils/mediaOptimizer.js';
+import { rampRateAt, RAMP_OUTPUT_FPS } from '../config/speedRamp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +53,68 @@ const reverseVideo = (inputPath) =>
       .run();
   });
 
+/**
+ * Bake the transition speed ramp (server/src/config/speedRamp.js) INTO a
+ * video file: every input frame gets a new timestamp so the clip itself
+ * plays the wave — slow/fast exactly as configured — at plain 1x in any
+ * browser. No runtime speed logic exists in the viewer.
+ *
+ * The time-warp t_out(t_in) = ∫ dt/rate is integrated numerically and
+ * approximated as a piecewise-linear `setpts` expression (64 pieces), then
+ * `fps` resamples to a constant frame rate.
+ *
+ * Output: `<name>_ramped<ext>` next to the input. Promise<outputPath>
+ */
+export const bakeSpeedRamp = async (inputPath) => {
+  const { duration } = await probeVideo(inputPath);
+  if (!duration || !Number.isFinite(duration)) {
+    throw new Error(`cannot determine duration of ${inputPath}`);
+  }
+
+  // Numerically integrate output time over N linear pieces (midpoint rule)
+  const N = 64;
+  const tIn = [];
+  const tOut = [];
+  let acc = 0;
+  for (let i = 0; i <= N; i++) {
+    tIn.push((duration * i) / N);
+    tOut.push(acc);
+    if (i < N) acc += duration / N / rampRateAt((i + 0.5) / N);
+  }
+
+  // Nested-if piecewise-linear mapping of T (input seconds) → output seconds
+  let expr = `${tOut[N].toFixed(6)}+(T-${tIn[N].toFixed(6)})/${rampRateAt(1).toFixed(6)}`;
+  for (let i = N - 1; i >= 0; i--) {
+    const slope = (tOut[i + 1] - tOut[i]) / (tIn[i + 1] - tIn[i]);
+    expr = `if(lt(T,${tIn[i + 1].toFixed(6)}),${tOut[i].toFixed(6)}+(T-${tIn[i].toFixed(6)})*${slope.toFixed(6)},${expr})`;
+  }
+
+  const ext = path.extname(inputPath);
+  const outputPath = path.join(
+    path.dirname(inputPath),
+    `${path.basename(inputPath, ext)}_ramped${ext}`,
+  );
+
+  await new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      // Single quotes protect the commas inside if(...) from the filtergraph parser
+      .videoFilters([`setpts='(${expr})/TB'`, `fps=${RAMP_OUTPUT_FPS}`])
+      .noAudio()
+      .outputOptions([
+        '-pix_fmt', 'yuv420p',
+        '-c:v', 'libx264',
+        '-crf', '25',
+        '-preset', 'fast',
+        '-movflags', '+faststart',
+      ])
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', reject)
+      .run();
+  });
+  return outputPath;
+};
+
 // ─── Upload Panorama ──────────────────────────────────────────────────────────
 
 // POST /api/media/panorama
@@ -69,8 +138,9 @@ export const uploadPanoramaHandler = async (req, res) => {
 export const uploadAudioHandler = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    const url = toPublicUrl(req.file.path);
-    res.status(201).json({ url });
+    // Heavy sources (WAV, 320k MP3…) are re-encoded to AAC 128k
+    const finalPath = await optimizeAudio(req.file.path);
+    res.status(201).json({ url: toPublicUrl(finalPath) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -82,8 +152,9 @@ export const uploadAudioHandler = async (req, res) => {
 export const uploadImageHandler = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    const url = toPublicUrl(req.file.path);
-    res.status(201).json({ url });
+    // Convert to WebP, cap at 2048 wide — popup covers/logos never need more
+    const finalPath = await optimizeImage(req.file.path);
+    res.status(201).json({ url: toPublicUrl(finalPath) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -106,14 +177,27 @@ export const uploadTransitionVideo = async (req, res) => {
     res.status(201).json({ videoUrl, reverseVideoUrl: '', message: 'Reverse processing started' });
 
     // Async processing: first shrink the forward clip in place (same filename,
-    // so the URL we just returned stays valid), then generate the reverse from
-    // the optimized file so it inherits the smaller size.
+    // so the URL we just returned stays valid), then generate the reverse and
+    // the speed-ramp-baked variants from the optimized file so they inherit
+    // the smaller size.
     try {
       await optimizeVideoInPlace(req.file.path).catch((err) =>
         console.error('Video optimization failed (continuing with original):', err.message),
       );
+      const rampedVideoUrl = await bakeSpeedRamp(req.file.path)
+        .then(toPublicUrl)
+        .catch((err) => {
+          console.error('FFmpeg ramp bake failed:', err.message);
+          return '';
+        });
       const reversedPath = await reverseVideo(req.file.path);
       const reverseVideoUrl = toPublicUrl(reversedPath);
+      const reverseRampedVideoUrl = await bakeSpeedRamp(reversedPath)
+        .then(toPublicUrl)
+        .catch((err) => {
+          console.error('FFmpeg reverse ramp bake failed:', err.message);
+          return '';
+        });
 
       if (projectId && transitionId) {
         const project = await Project.findById(projectId);
@@ -122,14 +206,25 @@ export const uploadTransitionVideo = async (req, res) => {
           if (project.transitions.has(transitionId)) {
             const transition = project.transitions.get(transitionId);
             transition.reverseVideoUrl = reverseVideoUrl;
+            transition.rampedVideoUrl = rampedVideoUrl;
+            transition.reverseRampedVideoUrl = reverseRampedVideoUrl;
             project.transitions.set(transitionId, transition);
           }
-          // Also patch any hotspot that embeds this transitionId directly
+          // Also patch any hotspot (and multi-video segment) that embeds this
+          // transitionId directly
           project.nodes.forEach((node) => {
             node.navigationHotspots.forEach((hs) => {
               if (hs.transitionId === transitionId) {
                 hs.reverseTransitionVideoUrl = reverseVideoUrl;
+                hs.rampedTransitionVideoUrl = rampedVideoUrl;
+                hs.reverseRampedTransitionVideoUrl = reverseRampedVideoUrl;
               }
+              hs.transitionVideos?.forEach((item) => {
+                if (item.transitionId === transitionId) {
+                  item.rampedVideoUrl = rampedVideoUrl;
+                  item.reverseRampedVideoUrl = reverseRampedVideoUrl;
+                }
+              });
             });
           });
           project.markModified('nodes');
@@ -156,6 +251,7 @@ const STREAM_TYPES = {
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
   '.aac': 'audio/aac',
+  '.m4a': 'audio/mp4',
 };
 
 export const streamVideo = (req, res) => {
@@ -214,6 +310,8 @@ export const getReverseStatus = async (req, res) => {
 
     res.json({
       reverseVideoUrl: transition.reverseVideoUrl || '',
+      rampedVideoUrl: transition.rampedVideoUrl || '',
+      reverseRampedVideoUrl: transition.reverseRampedVideoUrl || '',
       ready: Boolean(transition.reverseVideoUrl),
     });
   } catch (err) {

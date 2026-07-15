@@ -11,6 +11,7 @@ import adminRoutes from './routes/admin.js';
 import analyticsRoutes from './routes/analytics.js';
 import dashboardRoutes from './routes/dashboard.js';
 import messageRoutes from './routes/messages.js';
+import { startSubscriptionReminderJob } from './jobs/subscriptionReminders.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +21,10 @@ const PORT = process.env.PORT || 5000;
 
 // ─── Database ─────────────────────────────────────────────────────────────────
 connectDB();
+
+// Hourly sweep: emails owners about expiring subscriptions and creates
+// admin notifications (see jobs/subscriptionReminders.js).
+startSubscriptionReminderJob();
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS

@@ -35,6 +35,10 @@ const subscriptionSchema = new mongoose.Schema(
     },
     startedAt: { type: Date, required: true, default: Date.now },
     expiresAt: { type: Date, required: true },
+    // Expiry-reminder dedup ledger ('expiry_7d' | 'expiry_1d' | 'expired') —
+    // each key fires one owner email + admin notification per billing period.
+    // Cleared on renewal/reactivation so the next period reminds again.
+    remindersSent: { type: [String], default: [] },
     history: { type: [historyEntrySchema], default: [] },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }

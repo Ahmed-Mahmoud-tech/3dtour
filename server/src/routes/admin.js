@@ -18,6 +18,12 @@ import {
   assignProjectEmployee,
 } from '../controllers/adminController.js';
 import { exportProject } from '../controllers/exportController.js';
+import {
+  listNotifications,
+  setNotificationRead,
+  markAllNotificationsRead,
+  deleteNotification,
+} from '../controllers/notificationController.js';
 
 const router = Router();
 
@@ -37,5 +43,11 @@ router.put('/projects/:id/assign', assignProjectOwner);
 router.put('/projects/:id/access', updateProjectAccess);
 router.put('/projects/:id/assign-employee', assignProjectEmployee);
 router.get('/projects/:id/export', exportProject);
+// In-app notifications (subscription expiry alerts) — shared by the admin team.
+// read-all is registered before /:id/read so 'read-all' is never parsed as an id.
+router.get('/notifications', listNotifications);
+router.put('/notifications/read-all', markAllNotificationsRead);
+router.put('/notifications/:id/read', setNotificationRead);
+router.delete('/notifications/:id', deleteNotification);
 
 export default router;

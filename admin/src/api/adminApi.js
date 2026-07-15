@@ -39,6 +39,17 @@ export const adminApi = {
   assignProjectEmployee: (projectId, employeeId) =>
     axios.put(`${BASE}/projects/${projectId}/assign-employee`, { employeeId }).then((r) => r.data),
 
+  // Notifications (subscription expiry alerts) — shared by the admin team.
+  // params: { page, limit, unread } → { items, total, unread, page, pages }
+  listNotifications: (params) =>
+    axios.get(`${BASE}/notifications`, { params }).then((r) => r.data),
+  setNotificationRead: (id, read = true) =>
+    axios.put(`${BASE}/notifications/${id}/read`, { read }).then((r) => r.data),
+  markAllNotificationsRead: () =>
+    axios.put(`${BASE}/notifications/read-all`).then((r) => r.data),
+  deleteNotification: (id) =>
+    axios.delete(`${BASE}/notifications/${id}`).then((r) => r.data),
+
   // Self-hosted tour export — downloads a zip (auth header required, so no plain <a href>)
   exportProject: async (projectId, filename = 'tour-export.zip') => {
     const { data } = await axios.get(`${BASE}/projects/${projectId}/export`, {
