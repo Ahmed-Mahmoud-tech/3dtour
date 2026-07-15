@@ -1,0 +1,30 @@
+# Root .dockerignore — applies to the server build (context = repo root)
+# and keeps node_modules / build artifacts / secrets out of every image.
+
+**/node_modules
+**/.next
+**/dist
+**/dist-static
+**/out
+**/.vite
+
+# Uploaded media (mounted as a volume at runtime instead)
+server/uploads
+
+# Secrets — never bake .env into an image (compose injects env at runtime)
+**/.env
+**/.env.local
+**/.env.*.local
+
+# VCS / editor / logs / OS cruft
+.git
+.gitignore
+**/.vscode
+**/*.log
+**/npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Docker files themselves
+**/Dockerfile
+docker-compose*.yml
