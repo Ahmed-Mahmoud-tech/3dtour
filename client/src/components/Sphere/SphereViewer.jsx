@@ -445,6 +445,51 @@ function PanoramaControls({
 }
 
 // ─── Video Sphere (transition video mapped onto the sphere) ──────────────────
+
+// ─── Speed ramp: the clip's playback speed follows this wave ─────────────────
+// Keyframes over the clip: `at` = position in the clip (0 = start, 1 = end),
+// `rate` = playback speed there (1 = normal). Values between keyframes are
+// smoothly (cosine) interpolated, so the whole ramp is one continuous wave.
+// Reshape it freely — add/remove points. Examples:
+//   one stride : [{at:0, rate:0.4}, {at:0.5, rate:1.9}, {at:1, rate:0.4}]
+//   two strides: [{at:0, rate:0.4}, {at:0.25, rate:1.8}, {at:0.5, rate:0.6},
+//                 {at:0.75, rate:1.8}, {at:1, rate:0.4}]
+const speedMore = 2; // tweak to make the whole ramp faster/slower
+// const SPEED_RAMP = [
+//   { at: 0.0, rate: 0.4 * speedMore },
+//   { at: 0.15, rate: 6 * speedMore },
+//   { at: 0.35, rate: 8 * speedMore },
+//   { at: 0.65, rate: 10 * speedMore },
+//   { at: 0.85, rate: 12 * speedMore },
+//   { at: 1.0, rate: 0.4 * speedMore },
+// ];
+const SPEED_RAMP = [
+  { at: 0.0, rate: 0.4 * speedMore },
+  { at: 0.15, rate: 2.5 * speedMore },
+  { at: 0.35, rate: 3.5 * speedMore },
+  { at: 0.65, rate: 3.5 * speedMore },
+  { at: 0.85, rate: 1.9 * speedMore },
+  { at: 1.0, rate: 0.4 * speedMore },
+];
+// Progress fallback when the browser doesn't know the clip duration (yet):
+// streamed MP4s can report duration as Infinity/NaN until metadata settles.
+const RAMP_FALLBACK_SECONDS = 5;
+
+const rampRate = (progress) => {
+  const pts = SPEED_RAMP;
+  if (progress <= pts[0].at) return pts[0].rate;
+  for (let i = 1; i < pts.length; i++) {
+    if (progress <= pts[i].at) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const t = (progress - a.at) / (b.at - a.at || 1);
+      const s = 0.5 - 0.5 * Math.cos(Math.PI * t); // cosine ease → wave shape
+      return a.rate + (b.rate - a.rate) * s;
+    }
+  }
+  return pts[pts.length - 1].rate;
+};
+
 function VideoSphere({
   videoUrl,
   onEnded,
@@ -549,6 +594,26 @@ function VideoSphere({
       rvfcHandle = video.requestVideoFrameCallback(pumpVideoFrames);
     };
 
+    // Speed-ramp driver: retarget playbackRate every display frame from the
+    // clip's progress (rAF, not rVFC, so it also works on the fallback path).
+    // Never gated on duration — if it's unknown, progress is estimated
+    // against RAMP_FALLBACK_SECONDS so the ramp always applies.
+    let rateRaf = null;
+    const applySpeedRamp = () => {
+      const d =
+        Number.isFinite(video.duration) && video.duration > 0
+          ? video.duration
+          : RAMP_FALLBACK_SECONDS;
+      const rate = rampRate(Math.min(video.currentTime / d, 1));
+      video.playbackRate = Math.min(4, Math.max(0.1, rate));
+      rateRaf = requestAnimationFrame(applySpeedRamp);
+    };
+    // Start slow from the very first frame. defaultPlaybackRate too: the
+    // media load algorithm (triggered by setting src) resets playbackRate
+    // back to defaultPlaybackRate, which silently undid a plain assignment.
+    video.defaultPlaybackRate = SPEED_RAMP[0].rate;
+    video.playbackRate = SPEED_RAMP[0].rate;
+
     const handlePlaying = () => {
       // Only show sphere once the first frame is actually decoded — no black flash
       if (mounted) {
@@ -564,6 +629,7 @@ function VideoSphere({
     };
 
     const handleEnded = () => {
+      if (rateRaf) cancelAnimationFrame(rateRaf);
       // Trigger smooth fade-out before notifying parent
       if (mounted) {
         fadingOutRef.current = true;
@@ -583,6 +649,10 @@ function VideoSphere({
 
     video.src = videoUrl;
 
+    // Drive the speed ramp from the start (doesn't wait for 'playing' — the
+    // loop is cheap and guarantees the ramp is applied on every code path).
+    rateRaf = requestAnimationFrame(applySpeedRamp);
+
     // Try to play with better error handling
     const playPromise = video.play();
     if (playPromise) {
@@ -597,6 +667,7 @@ function VideoSphere({
 
     return () => {
       mounted = false;
+      if (rateRaf) cancelAnimationFrame(rateRaf);
       if (rvfcHandle && typeof video.cancelVideoFrameCallback === "function") {
         video.cancelVideoFrameCallback(rvfcHandle);
       }
@@ -685,7 +756,6 @@ function NadirLogo({ url }) {
     <mesh position={[0, NADIR_Y - 25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <circleGeometry args={[radius - 5, 64]} />
       <meshBasicMaterial map={texture} transparent />
-      {/* <meshBasicMaterial map={texture} transparent /> */}
     </mesh>
   );
 }
