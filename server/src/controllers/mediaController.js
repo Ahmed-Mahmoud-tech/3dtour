@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import { v4 as uuidv4 } from 'uuid';
@@ -11,7 +12,36 @@ import {
   optimizeAudio,
   probeVideo,
 } from '../utils/mediaOptimizer.js';
-import { rampRateAt, RAMP_OUTPUT_FPS } from '../config/speedRamp.js';
+import {
+  SPEED_RAMP,
+  rampRateAt,
+  RAMP_OUTPUT_FPS,
+  RAMP_MOTION_BLUR,
+} from '../config/speedRamp.js';
+
+// Short fingerprint of the CURRENT ramp settings, baked into the output
+// filename. Editing the ramp changes this hash → a new filename → a new URL,
+// so the viewer's stored URL changes and the browser can never serve a stale
+// cached clip. This is what makes rate edits actually show up.
+// BAKE_VERSION marks the bake ALGORITHM; bump it when the filter chain
+// changes so existing files re-bake even though the ramp config didn't move.
+const BAKE_VERSION = 3; // v3: sources restored from clean originals (July 2026 corruption)
+const RAMP_HASH = crypto
+  .createHash('md5')
+  .update(
+    `v${BAKE_VERSION}:${JSON.stringify(SPEED_RAMP)}:${RAMP_OUTPUT_FPS}:${RAMP_MOTION_BLUR}`,
+  )
+  .digest('hex')
+  .slice(0, 8);
+
+/** Output path of a clip's ramp-baked variant under the CURRENT ramp config */
+export const rampedPathFor = (inputPath) => {
+  const ext = path.extname(inputPath);
+  return path.join(
+    path.dirname(inputPath),
+    `${path.basename(inputPath, ext)}_ramped-${RAMP_HASH}${ext}`,
+  );
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,9 +91,12 @@ const reverseVideo = (inputPath) =>
  *
  * The time-warp t_out(t_in) = ∫ dt/rate is integrated numerically and
  * approximated as a piecewise-linear `setpts` expression (64 pieces), then
- * `fps` resamples to a constant frame rate.
+ * resampled to a constant frame rate. When RAMP_MOTION_BLUR > 1 the resample
+ * oversamples and averages (tmix) so fast parts get speed-scaled motion blur
+ * instead of a rough frame-cadence stutter.
  *
- * Output: `<name>_ramped<ext>` next to the input. Promise<outputPath>
+ * Output: `<name>_ramped-<rampHash><ext>` next to the input (see
+ * rampedPathFor). Promise<outputPath>
  */
 export const bakeSpeedRamp = async (inputPath) => {
   const { duration } = await probeVideo(inputPath);
@@ -89,16 +122,36 @@ export const bakeSpeedRamp = async (inputPath) => {
     expr = `if(lt(T,${tIn[i + 1].toFixed(6)}),${tOut[i].toFixed(6)}+(T-${tIn[i].toFixed(6)})*${slope.toFixed(6)},${expr})`;
   }
 
-  const ext = path.extname(inputPath);
-  const outputPath = path.join(
-    path.dirname(inputPath),
-    `${path.basename(inputPath, ext)}_ramped${ext}`,
-  );
+  const outputPath = rampedPathFor(inputPath);
+
+  // Resample the warped timeline to constant fps. With motion blur we
+  // oversample to fps*blur, average every `blur` samples (tmix), then keep
+  // exactly one AVERAGED frame per output interval:
+  //  - select picks the blended frame whose window covers [k/fps, (k+1)/fps)
+  //    — windows are aligned to output frames, so no frame is contaminated
+  //    by the previous interval (a trailing `fps` filter picked straddling
+  //    windows, which ghosted).
+  //  - blur must be high enough that the averaged samples overlap into a
+  //    CONTINUOUS streak; too few samples at high speed = discrete
+  //    multi-exposure ghost copies (the visible artifact this replaces).
+  // Blur is pointless (and only risks softness) when the ramp never speeds
+  // up, so it's disabled for ramps that stay at ~1x or below.
+  const maxRate = Math.max(...SPEED_RAMP.map((p) => p.rate));
+  const blur = maxRate > 1.5 ? Math.max(1, Math.round(RAMP_MOTION_BLUR)) : 1;
+  const resample =
+    blur > 1
+      ? [
+          `fps=${RAMP_OUTPUT_FPS * blur}`,
+          `tmix=frames=${blur}`,
+          `select='not(mod(n+1,${blur}))'`,
+          `setpts=N/(${RAMP_OUTPUT_FPS}*TB)`,
+        ]
+      : [`fps=${RAMP_OUTPUT_FPS}`];
 
   await new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       // Single quotes protect the commas inside if(...) from the filtergraph parser
-      .videoFilters([`setpts='(${expr})/TB'`, `fps=${RAMP_OUTPUT_FPS}`])
+      .videoFilters([`setpts='(${expr})/TB'`, ...resample])
       .noAudio()
       .outputOptions([
         '-pix_fmt', 'yuv420p',
@@ -181,7 +234,12 @@ export const uploadTransitionVideo = async (req, res) => {
     // the speed-ramp-baked variants from the optimized file so they inherit
     // the smaller size.
     try {
-      await optimizeVideoInPlace(req.file.path).catch((err) =>
+      // backupDir keeps the camera master in _originals — the served file is
+      // a lossy transcode, and having the master is what made the July 2026
+      // frame-corruption recovery possible (see scripts/restore-originals.mjs)
+      await optimizeVideoInPlace(req.file.path, {
+        backupDir: path.join(UPLOADS_ROOT, '_originals'),
+      }).catch((err) =>
         console.error('Video optimization failed (continuing with original):', err.message),
       );
       const rampedVideoUrl = await bakeSpeedRamp(req.file.path)
