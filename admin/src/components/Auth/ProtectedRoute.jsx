@@ -1,6 +1,10 @@
+import { lazy, Suspense } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
-import ChangePasswordModal from './ChangePasswordModal.jsx';
+
+// Lazy: only renders in the rare forced-password-change flow, and its
+// react-icons import would otherwise drag the icon bundle into the entry.
+const ChangePasswordModal = lazy(() => import('./ChangePasswordModal.jsx'));
 
 export default function ProtectedRoute({ children, adminOnly = false }) {
   const { user, loading } = useAuth();
@@ -20,7 +24,11 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
   return (
     <>
       {children}
-      {user.mustChangePassword && <ChangePasswordModal forced />}
+      {user.mustChangePassword && (
+        <Suspense fallback={null}>
+          <ChangePasswordModal forced />
+        </Suspense>
+      )}
     </>
   );
 }

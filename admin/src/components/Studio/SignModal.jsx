@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { FaTimes } from "react-icons/fa";
 import { mediaApi } from "../../api/projectApi.js";
-import IconPicker, { IconPreview } from "../IconPicker/IconPicker.jsx";
+
+// IconPicker star-imports 8 react-icons bundles (~5 MB raw) — lazy-load it so
+// the studio chunk stays lean; the icons only download when this modal renders.
+const IconPicker = lazy(() => import("../IconPicker/IconPicker.jsx"));
+const IconPreview = lazy(() =>
+  import("../IconPicker/IconPicker.jsx").then((m) => ({ default: m.IconPreview })),
+);
 
 /**
  * SignModal
@@ -96,7 +102,9 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
             <label className="admin-label">Sign Icon</label>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-600/30 border border-blue-500/30 flex items-center justify-center text-blue-300">
-                <IconPreview name={iconName} size={22} />
+                <Suspense fallback={<span className="text-gray-600 text-xs">…</span>}>
+                  <IconPreview name={iconName} size={22} />
+                </Suspense>
               </div>
               <div className="flex-1">
                 <button
@@ -115,13 +123,21 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
               className="border border-gray-700 rounded-xl overflow-hidden"
               style={{ minHeight: "320px" }}
             >
-              <IconPicker
-                value={iconName}
-                onSelect={(name) => {
-                  setIconName(name);
-                }}
-                onClose={() => setShowPicker(false)}
-              />
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center h-full text-gray-500 text-xs" style={{ minHeight: '320px' }}>
+                    Loading icons…
+                  </div>
+                }
+              >
+                <IconPicker
+                  value={iconName}
+                  onSelect={(name) => {
+                    setIconName(name);
+                  }}
+                  onClose={() => setShowPicker(false)}
+                />
+              </Suspense>
             </div>
           )}
 
