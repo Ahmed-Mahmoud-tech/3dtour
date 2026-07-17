@@ -85,8 +85,8 @@ export const PORTFOLIO = [
     texture: '/panos/p1.webp',
     title: { en: 'Classic Apartment — Full Walk', ar: 'شقة كلاسيك — جولة كاملة' },
     tags: {
-      en: ['8 spaces', 'Cinematic transitions', 'Reverse walk-back'],
-      ar: ['٨ مساحات', 'انتقالات سينمائية', 'رجوع عكسي حقيقي'],
+      en: ['8 spaces', 'Cinematic transitions', 'Robot-stabilized motion'],
+      ar: ['٨ مساحات', 'انتقالات سينمائية', 'حركة مثبّتة بروبوت'],
     },
   },
   {
@@ -163,7 +163,7 @@ export const STRINGS = {
         },
         {
           title: 'Filmed motion, not teleporting',
-          body: 'A robot-stabilized camera glides between rooms. Walk forward, walk back — every transition is real footage, forward and reverse.',
+          body: 'A robot-stabilized camera glides between rooms — every transition is real filmed footage, not a jump cut.',
         },
         {
           title: 'Fast on real networks',
@@ -232,7 +232,7 @@ export const STRINGS = {
           tagline: 'The signature experience',
           features: [
             'Everything in Essential',
-            'Filmed walk-through transitions — forward & reverse',
+            'Filmed walk-through transitions',
             'Up to 10 spaces',
             'Background audio',
             'Your branding on the tour',
@@ -373,7 +373,7 @@ export const STRINGS = {
         },
         {
           title: 'حركة متصوّرة، مش تنقّل مفاجئ',
-          body: 'كاميرا على روبوت مثبّت بتنساب بين الغرف. امشي لقدام وارجع لورا — كل انتقال لقطة حقيقية، رايح وجاي.',
+          body: 'كاميرا على روبوت مثبّت بتنساب بين الغرف — كل انتقال لقطة حقيقية متصوّرة، مش قطع مفاجئ.',
         },
         {
           title: 'سريعة على النت الحقيقي',
@@ -441,7 +441,7 @@ export const STRINGS = {
           tagline: 'التجربة الكاملة',
           features: [
             'كل اللي في الأساسية',
-            'انتقالات مشي متصوّرة — رايح وراجع',
+            'انتقالات مشي متصوّرة',
             'لحد ١٠ مساحات',
             'صوت خلفية',
             'هويتك التجارية على الجولة',

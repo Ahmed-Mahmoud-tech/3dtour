@@ -7,7 +7,7 @@ import { mediaApi } from '../../api/projectApi.js';
  * HotspotModal
  *
  * Opens when the admin clicks the sphere in [Place Hotspot] mode.
- * Allows configuring: target node, transition videos (multiple), playMode, scale.
+ * Allows configuring: target node, transition videos (multiple), scale.
  *
  * Each video entry has:
  *  - A file upload (or shows existing URL)
@@ -25,7 +25,6 @@ import { mediaApi } from '../../api/projectApi.js';
  */
 export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, onSave, onClose, initialData, currentVideoUrl }) {
   const [targetNodeId, setTargetNodeId]           = useState(initialData?.targetNodeId || '');
-  const [playMode, setPlayMode]                   = useState(initialData?.playMode || 'forward');
   const [scale, setScale]                         = useState(initialData?.scale || { width: 1.0, height: 1.0 });
   const [uploading, setUploading]                 = useState(false);
   const [error, setError]                         = useState('');
@@ -39,7 +38,6 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
         .map((v, i) => ({
           id: uuidv4(),
           videoUrl: v.videoUrl || '',
-          reverseVideoUrl: v.reverseVideoUrl || '',
           yawOffset: v.yawOffset ?? 0,
           order: i,
           transitionId: v.transitionId || '',
@@ -53,7 +51,6 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
       return [{
         id: uuidv4(),
         videoUrl: currentVideoUrl || initialData?.transitionVideoUrl || '',
-        reverseVideoUrl: initialData?.reverseTransitionVideoUrl || '',
         yawOffset: initialData?.videoInitialYawOffset ?? 0,
         order: 0,
         transitionId: initialData?.transitionId || '',
@@ -75,7 +72,6 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
     setVideoEntries(prev => [...prev, {
       id: uuidv4(),
       videoUrl: '',
-      reverseVideoUrl: '',
       yawOffset: 0,
       order: prev.length,
       transitionId: '',
@@ -115,18 +111,15 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
       for (const entry of videoEntries) {
         const transId = entry.transitionId || `trans_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
         let videoUrl = entry.videoUrl || '';
-        let reverseVideoUrl = entry.reverseVideoUrl || '';
 
         if (entry.file) {
           const result = await mediaApi.uploadVideo(projectId, transId, entry.file);
           videoUrl = result.videoUrl;
-          reverseVideoUrl = result.reverseVideoUrl || '';
         }
 
         if (videoUrl) {
           uploadedVideos.push({
             videoUrl,
-            reverseVideoUrl,
             yawOffset: parseFloat(entry.yawOffset) || 0,
             order: entry.order,
             transitionId: transId,
@@ -144,15 +137,13 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
         targetNodeId,
         transitionId: firstVideo?.transitionId || initialData?.transitionId || `trans_${uuidv4().replace(/-/g, '').slice(0, 12)}`,
         transitionVideoUrl: firstVideo?.videoUrl || '',
-        reverseTransitionVideoUrl: firstVideo?.reverseVideoUrl || '',
-        playMode,
         scale: { width: parseFloat(scale.width), height: parseFloat(scale.height) },
         videoInitialYawOffset: firstVideo?.yawOffset || 0,
         iconType: 'arrow_dynamic',
         // Multi-video array
         transitionVideos: uploadedVideos,
         _transitionData: firstVideo?.videoUrl
-          ? { id: firstVideo.transitionId, videoUrl: firstVideo.videoUrl, reverseVideoUrl: firstVideo.reverseVideoUrl }
+          ? { id: firstVideo.transitionId, videoUrl: firstVideo.videoUrl }
           : null,
       };
 
@@ -284,7 +275,7 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
                   />
                   {entry.file && (
                     <p className="text-[10px] text-gray-500">
-                      {entry.file.name} — Reversed copy will be auto-generated.
+                      {entry.file.name}
                     </p>
                   )}
 
@@ -317,26 +308,6 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
                     />
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Play mode */}
-          <div>
-            <label className="admin-label">Default Play Direction</label>
-            <div className="flex gap-3">
-              {['forward', 'backward'].map((m) => (
-                <label key={m} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                  <input
-                    type="radio"
-                    name="playMode"
-                    value={m}
-                    checked={playMode === m}
-                    onChange={() => setPlayMode(m)}
-                    className="accent-blue-500"
-                  />
-                  {m.charAt(0).toUpperCase() + m.slice(1)}
-                </label>
               ))}
             </div>
           </div>

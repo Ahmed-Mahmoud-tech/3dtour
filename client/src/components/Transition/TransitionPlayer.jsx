@@ -3,11 +3,7 @@ import { useRef, useEffect, useState } from "react";
 /**
  * TransitionPlayer
  *
- * Plays a pre-loaded transition video (forward or backward) and calls
- * onComplete when the video ends.
- *
- * For "backward" playMode, the server has pre-generated a reversed video file
- * (reverseVideoUrl). The correct URL is already passed via `videoUrl` from useTour.
+ * Plays a pre-loaded transition video and calls onComplete when the video ends.
  *
  * The `onPlaying` callback fires the moment the video begins rendering its first
  * frame — this is when hotspots are confirmed hidden.

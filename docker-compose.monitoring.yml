@@ -1,0 +1,64 @@
+# Monitoring stack — independent of the app stacks; meant for the Linux VPS
+# (Netdata's /proc//sys mounts are meaningless under Docker Desktop).
+#
+#   docker compose -f docker-compose.monitoring.yml up -d
+#
+#   Uptime Kuma (uptime checks + alerting + status page):  port 3001
+#   Netdata     (host + per-container metrics, no config):  port 19999
+#
+# Both bind to 127.0.0.1 by default — Netdata has NO auth and Kuma's dashboards
+# shouldn't face the internet either. Reach them over an SSH tunnel:
+#
+#   ssh -L 3001:127.0.0.1:3001 -L 19999:127.0.0.1:19999 <user>@<vps>
+#
+# then open http://localhost:3001 / http://localhost:19999. To expose them
+# publicly anyway set MONITOR_BIND=0.0.0.0 (and put them behind auth/TLS —
+# note that Docker published ports bypass ufw).
+#
+# Suggested Kuma monitors (outside-in, hit the PUBLIC URLs):
+#   http://<host>/                → client / landing
+#   http://<host>/api/health     → API (via the client's same-origin proxy)
+#   http://<host>:8080/          → admin dashboard
+# Configure notifications (email / Telegram / Discord) in Kuma's UI; its
+# status page can be shared with stakeholders.
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    ports:
+      - "${MONITOR_BIND:-127.0.0.1}:3001:3001"
+    volumes:
+      - kuma-data:/app/data
+    extra_hosts:
+      # Lets monitors reach host-published ports as http://host.docker.internal:<port>
+      - "host.docker.internal:host-gateway"
+
+  netdata:
+    image: netdata/netdata:stable
+    restart: unless-stopped
+    hostname: gateverse-vps
+    pid: host
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    ports:
+      - "${MONITOR_BIND:-127.0.0.1}:19999:19999"
+    volumes:
+      - netdata-config:/etc/netdata
+      - netdata-lib:/var/lib/netdata
+      - netdata-cache:/var/cache/netdata
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  kuma-data:
+  netdata-config:
+  netdata-lib:
+  netdata-cache:

@@ -78,16 +78,13 @@ async function main() {
     project.nodes.forEach((node) => {
       (node.navigationHotspots || []).forEach((hs) => {
         if (hs.transitionVideoUrl) videoUrls.add(hs.transitionVideoUrl);
-        if (hs.reverseTransitionVideoUrl) videoUrls.add(hs.reverseTransitionVideoUrl);
         (hs.transitionVideos || []).forEach((v) => {
           if (v.videoUrl) videoUrls.add(v.videoUrl);
-          if (v.reverseVideoUrl) videoUrls.add(v.reverseVideoUrl);
         });
       });
     });
     project.transitions.forEach((t) => {
       if (t.videoUrl) videoUrls.add(t.videoUrl);
-      if (t.reverseVideoUrl) videoUrls.add(t.reverseVideoUrl);
     });
 
     for (const url of videoUrls) {

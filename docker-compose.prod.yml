@@ -1,11 +1,16 @@
-# Full stack: MongoDB + API (with FFmpeg) + Next.js client + nginx-served admin.
+# Production stack — prebuilt images from GHCR, pushed by .github/workflows/deploy.yml.
+# Lives on the VPS next to a hand-written .env (see .env.docker.example; JWT_SECRET
+# is required). The CI deploy runs it as:
 #
-#   cp .env.docker.example .env   # then set JWT_SECRET (and SMTP_* if wanted)
-#   docker compose up -d --build
+#   IMAGE_TAG=<git sha> docker compose -f docker-compose.prod.yml up -d
 #
-#   Client (landing / viewer / dashboard):  http://localhost:5173
-#   Admin dashboard:                         http://localhost:5174
-#   API (direct, optional):                  http://localhost:5000/api/health
+# Manual use on the VPS (deploys :latest):
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Ports: client on ${CLIENT_PORT:-80}, admin on ${ADMIN_PORT:-8080} — matching the
+# existing Contabo layout. The API is NOT published; browsers reach it through the
+# client/admin same-origin proxies. Backups land in ./backups (see ops/backup).
 
 services:
   mongo:
@@ -21,9 +26,7 @@ services:
       start_period: 20s
 
   server:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
+    image: ghcr.io/ahmed-mahmoud-tech/3dtour/server:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -31,12 +34,9 @@ services:
       MONGO_URI: mongodb://mongo:27017/photovideo360
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      # Browsers talk to the client/admin (which same-origin proxy to the API),
-      # so CORS rarely triggers; list the public origins anyway.
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       MAX_IMAGE_SIZE: ${MAX_IMAGE_SIZE:-52428800}
       MAX_VIDEO_SIZE: ${MAX_VIDEO_SIZE:-524288000}
-      # FFmpeg is on PATH in the image — leave FFMPEG_PATH unset.
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-465}
       SMTP_USER: ${SMTP_USER:-}
@@ -44,40 +44,35 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
     volumes:
       - uploads:/app/uploads
-    ports:
-      - "5000:5000"   # optional direct API access; remove to keep it internal
     depends_on:
       mongo:
         condition: service_healthy
 
   client:
-    build:
-      context: ./client
+    image: ghcr.io/ahmed-mahmoud-tech/3dtour/client:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      SERVER_ORIGIN: http://server:5000   # next.config rewrites() proxy target
+      SERVER_ORIGIN: http://server:5000
     ports:
-      - "5173:5173"
+      - "${CLIENT_PORT:-80}:5173"
     depends_on:
       - server
 
   admin:
-    build:
-      context: ./admin
+    image: ghcr.io/ahmed-mahmoud-tech/3dtour/admin:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "5174:80"
+      - "${ADMIN_PORT:-8080}:80"
     depends_on:
       - server
 
-  # Nightly mongodump + weekly uploads tar → ./backups (see ops/backup/).
-  # Off by default in dev — enable with:  docker compose --profile backup up -d
-  # docker-compose.prod.yml runs it unconditionally.
+  # Nightly mongodump + weekly uploads tar into ./backups, with retention.
+  # Scripts: ops/backup/ — restore with:
+  #   docker compose -f docker-compose.prod.yml run --rm backup bash /ops/restore.sh <archive>
   backup:
     image: mongo:7
     restart: unless-stopped
-    profiles: ["backup"]
     environment:
       MONGO_URI: mongodb://mongo:27017/photovideo360
       BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-3}

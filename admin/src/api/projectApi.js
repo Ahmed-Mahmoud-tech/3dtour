@@ -84,8 +84,4 @@ export const mediaApi = {
       })
       .then((r) => r.data);
   },
-  getReverseStatus: (projectId, transitionId) =>
-    axios
-      .get(`${BASE}/media/reverse-status/${projectId}/${transitionId}`)
-      .then((r) => r.data),
 };

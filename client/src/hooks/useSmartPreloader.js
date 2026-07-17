@@ -174,12 +174,6 @@ export function useSmartPreloader() {
           ) {
             tasks.push(preloadVideo(hotspot.transitionVideoUrl));
           }
-          if (
-            hotspot.reverseTransitionVideoUrl &&
-            !videoCache.current.has(hotspot.reverseTransitionVideoUrl)
-          ) {
-            tasks.push(preloadVideo(hotspot.reverseTransitionVideoUrl));
-          }
 
           // Also check project.transitions[transitionId] if available
           if (
@@ -192,12 +186,6 @@ export function useSmartPreloader() {
               !videoCache.current.has(transition.videoUrl)
             ) {
               tasks.push(preloadVideo(transition.videoUrl));
-            }
-            if (
-              transition.reverseVideoUrl &&
-              !videoCache.current.has(transition.reverseVideoUrl)
-            ) {
-              tasks.push(preloadVideo(transition.reverseVideoUrl));
             }
           }
         });
@@ -274,7 +262,7 @@ export function useSmartPreloader() {
   /**
    * Preload assets for a specific next node (used during navigation hover).
    * @param {Object} targetNode
-   * @param {Object} transitionData - { videoUrl?, reverseVideoUrl? }
+   * @param {Object} transitionData - { videoUrl? }
    * @returns {Promise<void>}
    */
   const preloadNextAssets = useCallback(
@@ -286,9 +274,6 @@ export function useSmartPreloader() {
       }
       if (transitionData?.videoUrl) {
         tasks.push(preloadVideo(transitionData.videoUrl));
-      }
-      if (transitionData?.reverseVideoUrl) {
-        tasks.push(preloadVideo(transitionData.reverseVideoUrl));
       }
 
       await Promise.all(tasks);

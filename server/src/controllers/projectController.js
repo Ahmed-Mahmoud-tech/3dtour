@@ -238,7 +238,6 @@ export const deleteProject = async (req, res) => {
       if (node.panoramaPreviewUrl) urls.add(node.panoramaPreviewUrl);
       (node.navigationHotspots || []).forEach((hs) => {
         if (hs.transitionVideoUrl) urls.add(hs.transitionVideoUrl);
-        if (hs.reverseTransitionVideoUrl) urls.add(hs.reverseTransitionVideoUrl);
       });
       (node.infoSigns || []).forEach((s) => {
         if (s?.popupContent?.coverImage) urls.add(s.popupContent.coverImage);
@@ -248,7 +247,6 @@ export const deleteProject = async (req, res) => {
     project.transitions.forEach((t) => {
       if (!t) return;
       if (t.videoUrl) urls.add(t.videoUrl);
-      if (t.reverseVideoUrl) urls.add(t.reverseVideoUrl);
     });
 
     // Delete files from disk
@@ -371,13 +369,11 @@ export const deleteNode = async (req, res) => {
       if (node.panoramaPreviewUrl) deleteUploadByUrl(node.panoramaPreviewUrl);
       (node.navigationHotspots || []).forEach((hs) => {
         if (hs.transitionVideoUrl) deleteUploadByUrl(hs.transitionVideoUrl);
-        if (hs.reverseTransitionVideoUrl) deleteUploadByUrl(hs.reverseTransitionVideoUrl);
 
         // Also remove any shared transition record referenced by this hotspot
         if (hs.transitionId && project.transitions.has(hs.transitionId)) {
           const tr = project.transitions.get(hs.transitionId);
           if (tr?.videoUrl) deleteUploadByUrl(tr.videoUrl);
-          if (tr?.reverseVideoUrl) deleteUploadByUrl(tr.reverseVideoUrl);
           project.transitions.delete(hs.transitionId);
         }
       });
@@ -463,13 +459,6 @@ export const updateHotspot = async (req, res) => {
     ) {
       deleteUploadByUrl(existingHotspot.transitionVideoUrl);
     }
-    if (
-      hotspotBody.reverseTransitionVideoUrl &&
-      existingHotspot.reverseTransitionVideoUrl &&
-      hotspotBody.reverseTransitionVideoUrl !== existingHotspot.reverseTransitionVideoUrl
-    ) {
-      deleteUploadByUrl(existingHotspot.reverseTransitionVideoUrl);
-    }
 
     node.navigationHotspots[idx] = {
       ...node.navigationHotspots[idx],
@@ -488,14 +477,6 @@ export const updateHotspot = async (req, res) => {
         existingTransition.videoUrl !== _transitionData.videoUrl
       ) {
         deleteUploadByUrl(existingTransition.videoUrl);
-      }
-      if (
-        existingTransition &&
-        existingTransition.reverseVideoUrl &&
-        _transitionData.reverseVideoUrl &&
-        existingTransition.reverseVideoUrl !== _transitionData.reverseVideoUrl
-      ) {
-        deleteUploadByUrl(existingTransition.reverseVideoUrl);
       }
 
       project.transitions.set(_transitionData.id, _transitionData);

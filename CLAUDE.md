@@ -35,6 +35,10 @@ npm run preview    # preview the build
 
 There is **no test runner, linter, or formatter configured** in any package — no `test`/`lint` scripts exist. `mongodb-memory-server` is a server devDependency but is not wired to any script.
 
+### Docker & ops
+
+The full stack is dockerized: dev via [docker-compose.yml](docker-compose.yml) (see [DOCKER.md](DOCKER.md)), production via [docker-compose.prod.yml](docker-compose.prod.yml) with prebuilt GHCR images. CI builds all three images on PRs ([.github/workflows/ci.yml](.github/workflows/ci.yml)); pushes to `master` publish images and deploy to the VPS over SSH with a health gate ([.github/workflows/deploy.yml](.github/workflows/deploy.yml) → [ops/deploy/remote-deploy.sh](ops/deploy/remote-deploy.sh)). A `backup` compose service does nightly `mongodump` + weekly uploads tars with retention ([ops/backup/](ops/backup/)); monitoring (Uptime Kuma + Netdata) is [docker-compose.monitoring.yml](docker-compose.monitoring.yml). Runbook: [OPS.md](OPS.md). The server Dockerfile builds from the **repo root** context (it compiles the client static player); client/admin build from their own directories — so client/ and admin/ each have their own `.dockerignore`, and `nginx.conf` must stay OUT of admin's.
+
 Both frontends proxy `/api` and `/uploads` to `http://localhost:5000`, so the server must be running for either to function: the client via Next `rewrites()` in [client/next.config.mjs](client/next.config.mjs) (target overridable with `SERVER_ORIGIN`; Range requests pass through, verified for video streaming), the admin via the Vite dev proxy. The admin reads `import.meta.env.VITE_API_URL`; the client reads `process.env.NEXT_PUBLIC_API_URL`. Both fall back to `/api`.
 
 ## Architecture
@@ -63,7 +67,7 @@ A `Project` ([server/src/models/Project.js](server/src/models/Project.js)) is a 
 - **Analytics** ([routes/analytics.js](server/src/routes/analytics.js)): public `POST /collect`, rate-limited, parses `text/plain` as JSON because `navigator.sendBeacon` can't send `application/json` without a preflight.
 - **Dashboard** ([routes/dashboard.js](server/src/routes/dashboard.js)): `GET /:tourId`, `/:tourId/sessions` (paginated: `?page&limit` → `{ items, total, page, pages }`), and the visitor-message inbox (`GET /:tourId/messages?page&limit&q` — `q` searches sender name/email/body but the `unread` count stays global; `PUT .../messages/:id/read`, `DELETE .../messages/:id` — all scoped to the tour, message id alone is never trusted), behind `protect` + `canAccessTour` (assigned owner or any admin — the URL is never trusted). Admins reach an owner dashboard from the admin app's Clients page: the link carries the admin JWT as `#token=...` and [DashboardPage.jsx](client/src/views/DashboardPage.jsx) consumes the hash on mount (stores it as `owner_token`, strips it from the URL — the hash never reaches a server).
 - **Messages** ([routes/messages.js](server/src/routes/messages.js)): public `POST /:tourId` — a visitor leaves a message for the tour owner (stored in the separate [Message](server/src/models/Message.js) collection, never on the Project). Rate-limited 3/min per IP with `skipFailedRequests: true` so validation failures don't consume quota. The viewer form ([MessageForm.jsx](client/src/components/Popup/MessageForm.jsx)) is hidden in static exports (no API).
-- **Media** ([routes/media.js](server/src/routes/media.js)): uploads (protected) for panorama/audio/image/video; public `GET /stream/:folder/:filename` (HTTP Range support) and `GET /reverse-status/...`.
+- **Media** ([routes/media.js](server/src/routes/media.js)): uploads (protected) for panorama/audio/image/video; public `GET /stream/:folder/:filename` (HTTP Range support).
 
 ### Analytics pipeline (never touches the Project document)
 
@@ -80,7 +84,7 @@ An hourly job ([jobs/subscriptionReminders.js](server/src/jobs/subscriptionRemin
 ### Media pipeline
 
 - Uploads go to `server/uploads/{panoramas,videos,audio,images}/` via Multer disk storage ([middleware/upload.js](server/src/middleware/upload.js)). `setUploadDir(dir)` middleware sets `req.uploadDir` before Multer runs. `uploads/` is gitignored. Files are served statically at `/uploads/...`.
-- **Reverse-video generation**: on transition-video upload ([mediaController.js](server/src/controllers/mediaController.js) `uploadTransitionVideo`), the server responds immediately with the forward URL, then runs FFmpeg (`reverse` filter, audio stripped, `yuv420p`) **asynchronously in the background** and patches `reverseVideoUrl` into the project's transition + any embedding hotspots. Clients poll `reverse-status` to know when it's ready. A hotspot with `playMode: "backward"` plays the reversed clip.
+- **Transition-video upload** ([mediaController.js](server/src/controllers/mediaController.js) `uploadTransitionVideo`): the server responds immediately with the video URL, then shrinks the clip in place **asynchronously in the background** (same filename, so the returned URL stays valid). The camera master is archived in `uploads/_originals` before the lossy transcode — never delete that directory. (The reverse-video/`playMode: "backward"` system was removed 2026-07-17: clips only play forward as filmed; [scripts/remove-reverse-videos.mjs](server/scripts/remove-reverse-videos.mjs) purged the old DB fields and `*_reversed` files.)
 
 ### Coordinate system (client ↔ admin ↔ server all agree on this)
 

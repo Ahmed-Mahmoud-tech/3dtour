@@ -172,10 +172,8 @@ export default function TourPage({ projectId }) {
   const handleNavigate = async (
     targetNodeId,
     videoUrl,
-    playMode = "forward",
     transitionId,
     videoYawOffset = 0,
-    reverseVideoUrl = null,
     transitionVideos = [],
     hotspotId = "",
   ) => {
@@ -190,14 +188,11 @@ export default function TourPage({ projectId }) {
     const targetNode = project.nodes?.[targetNodeId];
 
     // ─── Build the video queue ─────────────────────────────────────────────
-    // Every segment prefers the server-baked `_ramped` variant (the speed
-    // wave is inside the file — see server/src/config/speedRamp.js); the
-    // original clip is the fallback for videos processed before the bake
-    // pipeline existed. The viewer plays whichever file at plain 1x.
-    const asSegment = (baseUrl, rampedUrl, yawOffset, startNodeId = "") =>
+    // Transitions play the filmed clips as uploaded, at natural speed.
+    const asSegment = (baseUrl, yawOffset, startNodeId = "") =>
       baseUrl
         ? {
-            videoUrl: rampedUrl || baseUrl,
+            videoUrl: baseUrl,
             yawOffset: yawOffset ?? 0,
             startNodeId,
           }
@@ -206,73 +201,17 @@ export default function TourPage({ projectId }) {
     let resolvedQueue = [];
 
     if (transitionVideos.length > 0) {
-      // Multi-video: sort by order, resolve URLs based on play direction
+      // Multi-video: sort by order
       const sorted = [...transitionVideos].sort((a, b) => a.order - b.order);
       resolvedQueue = sorted
-        .map((v) =>
-          playMode === "backward"
-            ? asSegment(
-                v.reverseVideoUrl || v.videoUrl,
-                v.reverseVideoUrl ? v.reverseRampedVideoUrl : v.rampedVideoUrl,
-                v.yawOffset,
-                v.startNodeId || "",
-              )
-            : asSegment(
-                v.videoUrl,
-                v.rampedVideoUrl,
-                v.yawOffset,
-                v.startNodeId || "",
-              ),
-        )
+        .map((v) => asSegment(v.videoUrl, v.yawOffset, v.startNodeId || ""))
         .filter(Boolean);
     } else {
       // Legacy single-video path
-      const clickedHotspot = activeNode?.navigationHotspots?.find(
-        (h) => h.id === hotspotId,
-      );
       const sharedTransition = project.transitions?.[transitionId];
-      let resolvedUrl = null;
-      let resolvedRampedUrl = null;
+      const resolvedUrl = videoUrl || sharedTransition?.videoUrl || null;
 
-      if (playMode === "backward") {
-        // Try reverse URL from the backward hotspot itself or its shared transition record
-        if (reverseVideoUrl) {
-          resolvedUrl = reverseVideoUrl;
-          resolvedRampedUrl =
-            clickedHotspot?.reverseRampedTransitionVideoUrl ||
-            sharedTransition?.reverseRampedVideoUrl ||
-            null;
-        } else if (sharedTransition?.reverseVideoUrl) {
-          resolvedUrl = sharedTransition.reverseVideoUrl;
-          resolvedRampedUrl = sharedTransition.reverseRampedVideoUrl || null;
-        } else {
-          // Auto-lookup: find the corresponding forward hotspot on the target node
-          const targetNodeData = project.nodes?.[targetNodeId];
-          const forwardHotspot = targetNodeData?.navigationHotspots?.find(
-            (hs) => hs.targetNodeId === activeNodeId,
-          );
-          if (forwardHotspot) {
-            const forwardTransition =
-              project.transitions?.[forwardHotspot.transitionId];
-            resolvedUrl =
-              forwardHotspot.reverseTransitionVideoUrl ||
-              forwardTransition?.reverseVideoUrl ||
-              null;
-            resolvedRampedUrl =
-              forwardHotspot.reverseRampedTransitionVideoUrl ||
-              forwardTransition?.reverseRampedVideoUrl ||
-              null;
-          }
-        }
-      } else {
-        resolvedUrl = videoUrl || sharedTransition?.videoUrl || null;
-        resolvedRampedUrl =
-          clickedHotspot?.rampedTransitionVideoUrl ||
-          sharedTransition?.rampedVideoUrl ||
-          null;
-      }
-
-      const segment = asSegment(resolvedUrl, resolvedRampedUrl, videoYawOffset);
+      const segment = asSegment(resolvedUrl, videoYawOffset);
       if (segment) resolvedQueue = [segment];
     }
 
@@ -320,7 +259,7 @@ export default function TourPage({ projectId }) {
       setPreservedCameraYaw(currentCameraYaw);
       setPreservedCameraPitch(currentCameraPitch);
       setSpotHasVideo(true);
-      navigateTo(targetNodeId, resolvedQueue[0].videoUrl, playMode, resolvedQueue);
+      navigateTo(targetNodeId, resolvedQueue[0].videoUrl, resolvedQueue);
     } else {
       // No video: cross-fade transition, preserve camera
       setPreservedCameraYaw(currentCameraYaw);

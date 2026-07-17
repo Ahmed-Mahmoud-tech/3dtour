@@ -61,7 +61,7 @@ photovideo360/
 │   │   ├── controllers/
 │   │   │   ├── authController.js      register / login / me
 │   │   │   ├── projectController.js   full CRUD: projects, nodes, hotspots, signs
-│   │   │   └── mediaController.js     upload + FFmpeg reverse + HTTP Range streaming
+│   │   │   └── mediaController.js     upload + HTTP Range streaming
 │   │   ├── routes/
 │   │   │   ├── auth.js
 │   │   │   ├── projects.js
@@ -132,12 +132,6 @@ z = -50 * sin(y_deg°) * sin(x_deg°)
 theta = acos(y / 50)         → y_deg (0–180°)
 phi   = atan2(-z, -x)        → x_deg (normalized 0–360°)
 ```
-
-### Reverse Video (Server-side FFmpeg)
-When admin uploads a transition video:
-1. Server saves the original → `videoUrl`
-2. FFmpeg reverses it asynchronously → `reverseVideoUrl`
-3. When a hotspot has `playMode: "backward"`, the viewer plays `reverseVideoUrl`
 
 ### Dynamic Icon Compilation
 Icon name strings (e.g. `"FaInfoCircle"`) are resolved at runtime:

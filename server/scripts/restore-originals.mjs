@@ -3,18 +3,18 @@
 // (every ~4th frame showed content from ~0.5s away → visible stutter at any
 // playback speed). Today's optimizer is clean, so:
 //
-//   1. every DB-referenced forward clip with a preserved master in
+//   1. every DB-referenced clip with a preserved master in
 //      uploads/_originals is re-optimized from that master (same filename,
 //      URLs stay valid);
 //   2. clips WITHOUT a master (uploaded while the upload path discarded
 //      originals) are salvaged in place: the misplaced frames are detected
 //      from the frame-difference signature (isolated spike pairs), dropped,
-//      and the survivors re-timed evenly;
-//   3. every DB-referenced reverse clip is regenerated from its restored
-//      forward clip (reverses were derived from corrupted files).
+//      and the survivors re-timed evenly.
 //
-// Run AFTER this from server/:  node scripts/bake-speed-ramps.mjs
-// (BAKE_VERSION 3 gives the re-bake fresh cache-busting filenames.)
+// (The speed-ramp bake step that used to follow this was removed 2026-07-17
+// along with the whole ramp system, and the reverse-clip regeneration phase
+// was removed 2026-07-17 with the reverse-video feature — restored clips are
+// served directly.)
 import 'dotenv/config';
 import path from 'path';
 import fs from 'fs';
@@ -38,28 +38,22 @@ const urlToPath = (url) =>
   path.join(UPLOADS_ROOT, url.slice('/uploads/'.length));
 const isRampedUrl = (url) => /_ramped(-[0-9a-f]+)?\.[^.]+$/.test(url);
 
-// ── Collect referenced forward/reverse URL pairs from all projects ──────────
+// ── Collect referenced clip URLs from all projects ──────────────────────────
 const forwardUrls = new Set();
-const reversePairs = new Map(); // reverseUrl -> forwardUrl it derives from
-const consider = (fwd, rev) => {
+const consider = (fwd) => {
   if (fwd && fwd.startsWith('/uploads/') && !isRampedUrl(fwd))
     forwardUrls.add(fwd);
-  if (rev && rev.startsWith('/uploads/') && !isRampedUrl(rev) && fwd)
-    reversePairs.set(rev, fwd);
 };
 const projects = await Project.find();
 for (const project of projects) {
-  for (const [, t] of project.transitions) consider(t.videoUrl, t.reverseVideoUrl);
+  for (const [, t] of project.transitions) consider(t.videoUrl);
   for (const node of project.nodes.values())
     for (const hs of node.navigationHotspots) {
-      consider(hs.transitionVideoUrl, hs.reverseTransitionVideoUrl);
-      for (const item of hs.transitionVideos || [])
-        consider(item.videoUrl, item.reverseVideoUrl);
+      consider(hs.transitionVideoUrl);
+      for (const item of hs.transitionVideos || []) consider(item.videoUrl);
     }
 }
-console.log(
-  `${forwardUrls.size} forward clip(s), ${reversePairs.size} reverse clip(s) referenced.`,
-);
+console.log(`${forwardUrls.size} clip(s) referenced.`);
 
 // ── Frame-difference series (signalstats YDIF) of a video ──────────────────
 // movie= chokes on drive-letter colons, so run ffprobe from the file's dir.
@@ -134,29 +128,6 @@ async function salvageInPlace(filePath, badFrames) {
 }
 const ydifSeriesLenCache = new Map();
 
-// Reverse `srcPath` into EXACTLY `destPath` (same settings as the server's
-// reverseVideo, but overwriting the existing reverse file to keep its URL).
-async function regenerateReverse(srcPath, destPath) {
-  const tmp = `${destPath}.rev.mp4`;
-  await new Promise((resolve, reject) => {
-    ffmpeg(srcPath)
-      .videoFilters('reverse')
-      .noAudio()
-      .outputOptions([
-        '-pix_fmt', 'yuv420p',
-        '-c:v', 'libx264',
-        '-crf', '25',
-        '-preset', 'fast',
-        '-movflags', '+faststart',
-      ])
-      .output(tmp)
-      .on('end', resolve)
-      .on('error', reject)
-      .run();
-  });
-  fs.renameSync(tmp, destPath);
-}
-
 async function runPool(items, concurrency, worker) {
   const queue = [...items];
   const runners = Array.from(
@@ -168,7 +139,7 @@ async function runPool(items, concurrency, worker) {
   await Promise.all(runners);
 }
 
-// ── Phase 1: restore/salvage forward clips ──────────────────────────────────
+// ── Restore/salvage clips ───────────────────────────────────────────────────
 let restored = 0;
 let salvaged = 0;
 let untouched = 0;
@@ -210,22 +181,7 @@ await runPool([...forwardUrls], 2, async (url) => {
   }
 });
 
-// ── Phase 2: regenerate reverse clips from the (now clean) forwards ─────────
-let reversed = 0;
-await runPool([...reversePairs.entries()], 2, async ([revUrl, fwdUrl]) => {
-  const fwd = urlToPath(fwdUrl);
-  const rev = urlToPath(revUrl);
-  if (!fs.existsSync(fwd)) {
-    console.warn(`  forward missing, reverse skipped: ${revUrl}`);
-    return;
-  }
-  console.log(`  reversing: ${revUrl}`);
-  await regenerateReverse(fwd, rev);
-  reversed++;
-});
-
 console.log(
-  `Done. ${restored} restored from masters, ${salvaged} salvaged, ${untouched} left as-is; ${reversed} reverse clip(s) regenerated.`,
+  `Done. ${restored} restored from masters, ${salvaged} salvaged, ${untouched} left as-is.`,
 );
-console.log('Now run: node scripts/bake-speed-ramps.mjs');
 await mongoose.disconnect();

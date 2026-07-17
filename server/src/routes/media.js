@@ -13,16 +13,12 @@ import {
   uploadImageHandler,
   uploadTransitionVideo,
   streamVideo,
-  getReverseStatus,
 } from "../controllers/mediaController.js";
 
 const router = Router();
 
 // Public video streaming endpoint (supports HTTP Range)
 router.get("/stream/:folder/:filename", streamVideo);
-
-// Public reverse-status polling endpoint
-router.get("/reverse-status/:projectId/:transitionId", getReverseStatus);
 
 // Protected upload endpoints
 router.post(

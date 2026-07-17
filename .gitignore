@@ -15,6 +15,9 @@ out/
 # Uploaded media (large binary files)
 server/uploads/
 
+# Local backup output (see ops/backup)
+backups/
+
 # OS / editor
 .DS_Store
 Thumbs.db

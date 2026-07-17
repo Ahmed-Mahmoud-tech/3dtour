@@ -1,0 +1,46 @@
+# CI — verify all three Docker images build on every pull request.
+# There is no test runner / linter in this repo (see CLAUDE.md), so a clean
+# image build of server + client + admin IS the merge gate.
+
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build ${{ matrix.name }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Server builds from the repo root so its first stage can compile
+          # the client's static tour player (see server/Dockerfile).
+          - name: server
+            context: .
+            dockerfile: server/Dockerfile
+          - name: client
+            context: client
+            dockerfile: client/Dockerfile
+          - name: admin
+            context: admin
+            dockerfile: admin/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

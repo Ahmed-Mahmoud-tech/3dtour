@@ -445,10 +445,8 @@ function PanoramaControls({
 }
 
 // ─── Video Sphere (transition video mapped onto the sphere) ──────────────────
-// The viewer has NO speed logic: the transition speed wave is baked into the
-// video files themselves by the server (see server/src/config/speedRamp.js —
-// edit the ramp there and re-run scripts/bake-speed-ramps.mjs). Every clip
-// plays at plain 1x, so playback is identical in every browser.
+// The viewer has NO speed logic: every clip plays at plain 1x, so playback
+// is identical in every browser.
 function VideoSphere({
   videoUrl,
   onEnded,
@@ -804,7 +802,7 @@ function Scene({
  * @param {object}   props
  * @param {object}   props.node           Active node data from MongoDB
  * @param {boolean}  props.hotspotVisible Whether hotspots/signs are rendered
- * @param {function} props.onNavigate     (targetNodeId, transitionId, playMode) => void
+ * @param {function} props.onNavigate     (targetNodeId, videoUrl, transitionId, ...) => void
  */
 export default function SphereViewer({
   node,

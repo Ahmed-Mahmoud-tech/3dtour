@@ -33,7 +33,7 @@ export function useTour(projectId) {
     useSmartPreloader();
 
   // Transition state
-  const [transition, setTransition] = useState(null); // { videoUrl, playMode, targetNodeId }
+  const [transition, setTransition] = useState(null); // { videoUrl, targetNodeId }
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [hotspotVisible, setHotspotVisible] = useState(true);
 
@@ -131,11 +131,10 @@ export function useTour(projectId) {
    * Navigate to a new node, optionally via a transition video or video queue.
    * @param {string} targetNodeId
    * @param {string} [videoUrl]           - Single video URL (legacy / first video)
-   * @param {'forward'|'backward'} [playMode='forward']
    * @param {{ videoUrl: string, yawOffset: number }[]} [queue=[]] - Multi-video queue
    */
   const navigateTo = useCallback(
-    (targetNodeId, videoUrl, playMode = "forward", queue = []) => {
+    (targetNodeId, videoUrl, queue = []) => {
       if (!project) return;
       if (targetNodeId === activeNodeId) return;
 
@@ -145,7 +144,6 @@ export function useTour(projectId) {
         setVideoQueueIndex(0);
         setTransition({
           videoUrl: queue[0].videoUrl,
-          playMode,
           targetNodeId,
         });
         setIsTransitioning(true);
@@ -154,7 +152,7 @@ export function useTour(projectId) {
         // Single video (legacy path)
         setVideoQueue([]);
         setVideoQueueIndex(0);
-        setTransition({ videoUrl, playMode, targetNodeId });
+        setTransition({ videoUrl, targetNodeId });
         setIsTransitioning(true);
         setHotspotVisible(false);
       } else {

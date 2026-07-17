@@ -4,6 +4,10 @@ The whole platform (MongoDB, API, Next.js client, admin dashboard) runs from a
 single `docker compose` command. FFmpeg and the self-hosted static tour player
 are baked into the server image — no host dependencies beyond Docker.
 
+This file covers local/dev usage. CI/CD, production deploys
+(`docker-compose.prod.yml`), database backups, and monitoring live in
+[OPS.md](OPS.md).
+
 ## Quick start
 
 ```bash
