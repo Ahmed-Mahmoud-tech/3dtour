@@ -853,14 +853,19 @@ export default function SphereViewer({
     setDisplayedNode(node);
   }
 
-  // Handle video transitions: hide current panorama when video starts
+  // Handle video transitions. The current panorama is deliberately NOT faded
+  // out when the video starts: the video sphere renders at a smaller radius in
+  // front of it and covers it once its first frame is decoded, and the sphere
+  // unmounts in the same commit the node switches. Fading it out early exposed
+  // the black scene background during the click→first-frame gap (on the FIRST
+  // transition the backdrop spheres behind it are depth-culled because the
+  // long-lived active sphere draws before them), which showed as a dark
+  // translucent dip at tour start.
   useEffect(() => {
     const hadVideo = prevVideoUrlRef.current;
     const hasVideo = transitionVideoUrl;
 
     if (hasVideo) {
-      // Video is starting, hide current panorama (target node is shown behind video)
-      setPanoramaOpacity(0);
       // Clean up previous node since we're transitioning
       setPreviousNode(null);
     } else if (hadVideo && !hasVideo) {
