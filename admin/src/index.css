@@ -18,13 +18,54 @@ body,
 }
 
 /* Custom scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
 
 /* Crosshair cursor when in placement mode */
-.placement-mode canvas { cursor: crosshair !important; }
+.placement-mode canvas {
+  cursor: crosshair !important;
+}
+
+/* Navigation footprint pulse — same animation as the client viewer so the
+   studio previews what visitors will see */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.hotspot-pulse::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  /* currentColor: the marker sets `color` to its configured tint */
+  border: 3px solid currentColor;
+  box-shadow: 0 0 12px currentColor;
+  animation: pulse-ring 2s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  pointer-events: none;
+}
 
 /* Admin input styles */
 .admin-input {

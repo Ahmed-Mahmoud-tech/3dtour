@@ -1,6 +1,7 @@
 import { useState, lazy, Suspense } from "react";
 import { FaTimes } from "react-icons/fa";
 import { mediaApi } from "../../api/projectApi.js";
+import { hexToRgba, darkenHex } from "../../utils/colorUtils.js";
 
 // IconPicker star-imports 8 react-icons bundles (~5 MB raw) — lazy-load it so
 // the studio chunk stays lean; the icons only download when this modal renders.
@@ -25,6 +26,12 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
   const [iconName, setIconName] = useState(
     initialData?.appearance?.assetUrl || "FaInfoCircle",
   );
+  const [iconColor, setIconColor] = useState(
+    initialData?.appearance?.iconColor || "#ffffff",
+  );
+  const [signColor, setSignColor] = useState(
+    initialData?.appearance?.color || "#10c9b7",
+  );
   const [showPicker, setShowPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -43,7 +50,8 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
     setUploading(true);
     try {
       const assetUrl = iconName;
-      let coverImageUrl = "";
+      // Keep the existing cover on edit unless a new file replaces it
+      let coverImageUrl = initialData?.popupContent?.coverImage || "";
 
       if (coverImageFile) {
         const res = await mediaApi.uploadImage(coverImageFile);
@@ -56,7 +64,7 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
           width: parseFloat(scale.width),
           height: parseFloat(scale.height),
         },
-        appearance: { renderType: "icon", assetUrl },
+        appearance: { renderType: "icon", assetUrl, iconColor, color: signColor },
         popupContent: { title, coverImage: coverImageUrl, htmlContent },
       };
 
@@ -101,9 +109,15 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
           <div>
             <label className="admin-label">Sign Icon</label>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-600/30 border border-blue-500/30 flex items-center justify-center text-blue-300">
+              {/* Live preview on the same badge gradient the viewer renders */}
+              <div
+                className="w-10 h-10 rounded-full border border-white/40 flex items-center justify-center flex-shrink-0"
+                style={{
+                  background: `radial-gradient(120% 120% at 30% 25%, ${hexToRgba(signColor, 0.88)}, ${hexToRgba(darkenHex(signColor, 0.45), 0.88)})`,
+                }}
+              >
                 <Suspense fallback={<span className="text-gray-600 text-xs">…</span>}>
-                  <IconPreview name={iconName} size={22} />
+                  <IconPreview name={iconName} size={22} color={iconColor} />
                 </Suspense>
               </div>
               <div className="flex-1">
@@ -113,6 +127,65 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
                 >
                   {iconName || "Pick an icon"}
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Sign (badge) color */}
+          <div>
+            <label className="admin-label">Sign Color</label>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="color"
+                value={signColor}
+                onChange={(e) => setSignColor(e.target.value)}
+                className="h-9 w-14 rounded-lg border border-gray-700 bg-gray-800 cursor-pointer p-1"
+                title="Pick any color"
+              />
+              <span className="text-xs text-gray-400 font-mono">{signColor}</span>
+              <div className="flex items-center gap-1.5 ml-auto">
+                {["#10c9b7", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444", "#1f2937"].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setSignColor(c)}
+                    className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110
+                      ${signColor.toLowerCase() === c ? "border-blue-400" : "border-gray-600"}`}
+                    style={{ background: c }}
+                    title={c}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-gray-600 text-xs mt-1">
+              Colors the whole sign badge (gradient and glow are derived from it).
+            </p>
+          </div>
+
+          {/* Icon color */}
+          <div>
+            <label className="admin-label">Icon Color</label>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="color"
+                value={iconColor}
+                onChange={(e) => setIconColor(e.target.value)}
+                className="h-9 w-14 rounded-lg border border-gray-700 bg-gray-800 cursor-pointer p-1"
+                title="Pick any color"
+              />
+              <span className="text-xs text-gray-400 font-mono">{iconColor}</span>
+              <div className="flex items-center gap-1.5 ml-auto">
+                {["#ffffff", "#10c9b7", "#fbbf24", "#f87171", "#60a5fa", "#111827"].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setIconColor(c)}
+                    className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110
+                      ${iconColor.toLowerCase() === c ? "border-blue-400" : "border-gray-600"}`}
+                    style={{ background: c }}
+                    title={c}
+                  />
+                ))}
               </div>
             </div>
           </div>

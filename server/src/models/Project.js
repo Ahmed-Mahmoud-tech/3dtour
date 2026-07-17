@@ -36,6 +36,8 @@ const NavigationHotspotSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
     iconType: { type: String, default: "arrow_dynamic" },
+    // Footprint marker tint (ring, fill, feet, pulse)
+    color: { type: String, default: "#ffffff" },
     position2D: { type: Position2DSchema, required: true },
     scale: { type: ScaleSchema, default: () => ({}) },
     targetNodeId: { type: String, required: true },
@@ -65,6 +67,9 @@ const AppearanceSchema = new mongoose.Schema(
       default: "icon",
     },
     assetUrl: { type: String, default: "FaInfoCircle" },
+    iconColor: { type: String, default: "#ffffff" },
+    // Badge (sign body) base color — gradient/glow are derived from it
+    color: { type: String, default: "#10c9b7" },
   },
   { _id: false },
 );

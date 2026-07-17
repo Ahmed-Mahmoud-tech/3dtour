@@ -80,10 +80,10 @@ export default function IconPicker({ value, onSelect, onClose }) {
 /**
  * Small inline preview of the currently selected icon.
  */
-export function IconPreview({ name, size = 20 }) {
+export function IconPreview({ name, size = 20, color }) {
   const index = getIconIndex();
   const entry = index.find(([n]) => n === name);
   if (!entry) return <span className="text-gray-600 text-xs">—</span>;
   const Icon = entry[1];
-  return <Icon size={size} />;
+  return <Icon size={size} color={color} />;
 }

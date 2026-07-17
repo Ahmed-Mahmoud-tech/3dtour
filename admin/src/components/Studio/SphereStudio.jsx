@@ -10,8 +10,9 @@ import * as MdIcons from "react-icons/md";
 import * as HiIcons from "react-icons/hi";
 import * as BiIcons from "react-icons/bi";
 import * as FiIcons from "react-icons/fi";
-import { FaArrowRight } from "react-icons/fa";
 import { cartesianToDeg, degToPosition } from "../../utils/coordUtils.js";
+import { hexToRgba, darkenHex } from "../../utils/colorUtils.js";
+import FloorMarker3D from "./FloorMarker3D.jsx";
 
 const SPHERE_RADIUS = 50;
 
@@ -73,35 +74,67 @@ function PanoramaSphere({ url, onClick }) {
   );
 }
 
+// ─── Marker visuals (mirror the client viewer's NavigationHotspot/InfoSign) ──
+// Navigation hotspots render as FloorMarker3D — a real 3D ring + chevrons on
+// the floor (duplicated from client/src/components/Sphere/FloorMarker3D.jsx,
+// keep both in sync). Info signs stay as Html badges below.
+
+function SignBadge({
+  size,
+  height,
+  iconName,
+  iconColor,
+  color = "#10c9b7",
+  dashed = false,
+}) {
+  return (
+    <div
+      className="flex items-center justify-center rounded-full backdrop-blur-sm"
+      style={{
+        width: size,
+        height,
+        border: `2px ${dashed ? "dashed" : "solid"} rgba(255,255,255,0.6)`,
+        background: `radial-gradient(120% 120% at 30% 25%, ${hexToRgba(color, 0.88)}, ${hexToRgba(darkenHex(color, 0.45), 0.88)})`,
+        boxShadow: `0 3px 10px rgba(0,0,0,0.4), 0 0 10px ${hexToRgba(color, 0.35)}`,
+      }}
+    >
+      <AdminDynamicIcon
+        name={iconName || "FaInfoCircle"}
+        size={size * 0.52}
+        color={iconColor || "white"}
+      />
+    </div>
+  );
+}
+
 // ─── Live placement preview pin ───────────────────────────────────────────────
 function PreviewPin({ x_deg, y_deg, type, iconName, scale }) {
+  if (type === "hotspot") {
+    return (
+      <FloorMarker3D
+        x_deg={x_deg}
+        y_deg={y_deg}
+        scale={scale}
+        dashed
+        pulse={false}
+        interactive={false}
+      />
+    );
+  }
+
   const position = degToPosition(x_deg, y_deg);
   const baseSize = 44 * (scale?.width || 1);
+  const heightRatio = (scale?.height || 1) / (scale?.width || 1);
 
   return (
     <Html position={position} center zIndexRange={[50, 100]}>
-      <div
-        className="flex items-center justify-center rounded-full border-2 border-dashed
-                   pointer-events-none"
-        style={{
-          width: baseSize,
-          height: baseSize * ((scale?.height || 1) / (scale?.width || 1)),
-          background:
-            type === "hotspot"
-              ? "rgba(255,255,255,0.25)"
-              : "rgba(59,130,246,0.35)",
-          borderColor: type === "hotspot" ? "white" : "#3b82f6",
-          boxShadow: "0 0 20px rgba(255,255,255,0.3)",
-        }}
-      >
-        {type === "hotspot" ? (
-          <FaArrowRight size={baseSize * 0.4} color="white" />
-        ) : (
-          <AdminDynamicIcon
-            name={iconName || "FaInfoCircle"}
-            size={baseSize * 0.7}
-          />
-        )}
+      <div className="pointer-events-none">
+        <SignBadge
+          size={baseSize}
+          height={baseSize * heightRatio}
+          iconName={iconName}
+          dashed
+        />
       </div>
     </Html>
   );
@@ -111,41 +144,35 @@ function PreviewPin({ x_deg, y_deg, type, iconName, scale }) {
 function ExistingPins({ node, onEditItem, placementMode }) {
   return (
     <>
-      {node?.navigationHotspots?.map((h) => {
-        const pos = degToPosition(h.position2D.x_deg, h.position2D.y_deg);
-        const size = 36 * (h.scale?.width || 1);
-        return (
-          <Html key={h.id} position={pos} center zIndexRange={[10, 20]}>
-            <div
-              onClick={() => !placementMode && onEditItem?.("hotspot", h)}
-              className={`flex items-center justify-center rounded-full border border-white/60 bg-white/20 transition-all
-                ${!placementMode ? "cursor-pointer hover:bg-white/35 hover:scale-110" : "pointer-events-none"}`}
-              style={{
-                width: size,
-                height: size,
-                boxShadow: "0 0 8px rgba(255,255,255,0.4)",
-              }}
-            >
-              <FaArrowRight size={size * 0.4} color="white" />
-            </div>
-          </Html>
-        );
-      })}
+      {node?.navigationHotspots?.map((h) => (
+        <FloorMarker3D
+          key={h.id}
+          x_deg={h.position2D.x_deg}
+          y_deg={h.position2D.y_deg}
+          color={h.color || "#ffffff"}
+          scale={h.scale}
+          interactive={!placementMode}
+          onClick={() => onEditItem?.("hotspot", h)}
+        />
+      ))}
       {node?.infoSigns?.map((s) => {
         const pos = degToPosition(s.position2D.x_deg, s.position2D.y_deg);
-        const sW = 32 * (s.scale?.width || 1);
-        const sH = 32 * (s.scale?.height || 1);
+        const sW = 40 * (s.scale?.width || 1);
+        const sH = 40 * (s.scale?.height || 1);
         return (
           <Html key={s.id} position={pos} center zIndexRange={[10, 20]}>
             <div
               onClick={() => !placementMode && onEditItem?.("sign", s)}
-              className={`flex items-center justify-center rounded-full border border-blue-400/60 bg-blue-500/20 transition-all
-                ${!placementMode ? "cursor-pointer hover:bg-blue-400/35 hover:scale-110" : "pointer-events-none"}`}
-              style={{ width: sW, height: sH }}
+              className={`transition-transform
+                ${!placementMode ? "cursor-pointer hover:scale-110" : "pointer-events-none"}`}
+              title={s.popupContent?.title || "Info sign — click to edit"}
             >
-              <AdminDynamicIcon
-                name={s.appearance?.assetUrl || "FaInfoCircle"}
-                size={sW * 0.7}
+              <SignBadge
+                size={sW}
+                height={sH}
+                iconName={s.appearance?.assetUrl}
+                iconColor={s.appearance?.iconColor}
+                color={s.appearance?.color || "#10c9b7"}
               />
             </div>
           </Html>

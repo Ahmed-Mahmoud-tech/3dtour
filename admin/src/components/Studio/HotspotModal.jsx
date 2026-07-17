@@ -25,6 +25,7 @@ import { mediaApi } from '../../api/projectApi.js';
  */
 export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, onSave, onClose, initialData, currentVideoUrl }) {
   const [targetNodeId, setTargetNodeId]           = useState(initialData?.targetNodeId || '');
+  const [markerColor, setMarkerColor]             = useState(initialData?.color || '#ffffff');
   const [scale, setScale]                         = useState(initialData?.scale || { width: 1.0, height: 1.0 });
   const [uploading, setUploading]                 = useState(false);
   const [error, setError]                         = useState('');
@@ -138,6 +139,7 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
         transitionId: firstVideo?.transitionId || initialData?.transitionId || `trans_${uuidv4().replace(/-/g, '').slice(0, 12)}`,
         transitionVideoUrl: firstVideo?.videoUrl || '',
         scale: { width: parseFloat(scale.width), height: parseFloat(scale.height) },
+        color: markerColor,
         videoInitialYawOffset: firstVideo?.yawOffset || 0,
         iconType: 'arrow_dynamic',
         // Multi-video array
@@ -310,6 +312,37 @@ export default function HotspotModal({ projectId, coords, nodes, sourceNodeId, o
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Marker color */}
+          <div>
+            <label className="admin-label">Marker Color</label>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="color"
+                value={markerColor}
+                onChange={(e) => setMarkerColor(e.target.value)}
+                className="h-9 w-14 rounded-lg border border-gray-700 bg-gray-800 cursor-pointer p-1"
+                title="Pick any color"
+              />
+              <span className="text-xs text-gray-400 font-mono">{markerColor}</span>
+              <div className="flex items-center gap-1.5 ml-auto">
+                {['#ffffff', '#10c9b7', '#fbbf24', '#60a5fa', '#f87171', '#111827'].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setMarkerColor(c)}
+                    className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110
+                      ${markerColor.toLowerCase() === c ? 'border-blue-400' : 'border-gray-600'}`}
+                    style={{ background: c }}
+                    title={c}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-gray-600 text-xs mt-1">
+              Tints the footprint ring, feet and pulse in the tour.
+            </p>
           </div>
 
           {/* Scale */}
