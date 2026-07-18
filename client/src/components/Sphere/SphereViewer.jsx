@@ -23,9 +23,17 @@ const NADIR_Y = -20;
 // Loads the tiny preview first (decodes in ~ms, shows instantly), then swaps
 // in the full-resolution texture once it's downloaded and decoded. Returns
 // null until at least the preview is ready.
-function useProgressiveTexture(fullUrl, previewUrl) {
+// If the FULL texture fails while a preview is showing, we silently stay on
+// the preview (degraded but visible). If nothing loaded at all, onError fires
+// so the page can show a retry UI instead of a black void. retryNonce > 0
+// re-runs the load with a cache-busting query.
+function useProgressiveTexture(fullUrl, previewUrl, onError, retryNonce = 0) {
   const { gl } = useThree();
   const [texture, setTexture] = useState(null);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onErrorRef.current = onError;
+  });
 
   useEffect(() => {
     let alive = true;
@@ -43,8 +51,12 @@ function useProgressiveTexture(fullUrl, previewUrl) {
       return tex;
     };
 
+    // Retries must not replay a cached failure/partial response
+    const bust = (url) =>
+      retryNonce > 0 ? `${url}${url.includes("?") ? "&" : "?"}r=${retryNonce}` : url;
+
     if (previewUrl) {
-      loader.load(previewUrl, (tex) => {
+      loader.load(bust(previewUrl), (tex) => {
         if (!alive || fullReady) return tex.dispose();
         previewTex = configure(tex);
         setTexture(previewTex);
@@ -53,7 +65,7 @@ function useProgressiveTexture(fullUrl, previewUrl) {
     }
 
     loader.load(
-      fullUrl,
+      bust(fullUrl),
       (tex) => {
         if (!alive) return tex.dispose();
         fullReady = true;
@@ -66,7 +78,11 @@ function useProgressiveTexture(fullUrl, previewUrl) {
         invalidate();
       },
       undefined,
-      () => console.error("Panorama failed to load:", fullUrl),
+      () => {
+        console.error("Panorama failed to load:", fullUrl);
+        // No preview on screen either → the scene is a black void; tell the page.
+        if (alive && !previewTex) onErrorRef.current?.();
+      },
     );
 
     return () => {
@@ -75,7 +91,7 @@ function useProgressiveTexture(fullUrl, previewUrl) {
       if (previewTex) previewTex.dispose();
       if (fullTex) fullTex.dispose();
     };
-  }, [fullUrl, previewUrl, gl]);
+  }, [fullUrl, previewUrl, gl, retryNonce]);
 
   return texture;
 }
@@ -97,8 +113,15 @@ function PanoramaSphere({
   onFadeInComplete,
   yawOffset = 0,
   customSphere = SPHERE_RADIUS,
+  onLoadError,
+  retryNonce = 0,
 }) {
-  const texture = useProgressiveTexture(panoramaUrl, previewUrl);
+  const texture = useProgressiveTexture(
+    panoramaUrl,
+    previewUrl,
+    onLoadError,
+    retryNonce,
+  );
   const opacityRef = useRef(initialOpacity);
   const matRef = useRef();
   const meshRef = useRef();
@@ -133,7 +156,7 @@ function PanoramaSphere({
   }, [textureReady]);
 
   // Smooth fade animation - ~1 second transition
-  useFrame(() => {
+  useFrame((_, delta) => {
     // Nothing left to animate for the current target — do no work and,
     // crucially, do NOT call invalidate(), so the render loop actually stops.
     if (doneRef.current) return;
@@ -142,8 +165,9 @@ function PanoramaSphere({
     const current = opacityRef.current;
     if (matRef.current && textureReady) {
       if (Math.abs(current - target) > 0.001) {
-        // Smooth fade: ~1 second at 60fps using lerp factor 0.05 for slower, smoother transition
-        opacityRef.current += (target - current) * 0.05;
+        // Smooth fade, frame-rate independent: delta*3 ≈ the old 0.05/frame
+        // at 60 fps, but identical pacing at 30 or 120 Hz.
+        opacityRef.current += (target - current) * Math.min(1, delta * 3);
         matRef.current.opacity = opacityRef.current;
         // Still animating — ask for exactly one more frame.
         invalidate();
@@ -477,7 +501,7 @@ function VideoSphere({
   // of the FPS collapse during transitions.
   const rvfcActiveRef = useRef(false);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (doneRef.current) return;
 
     // Fallback path only: without rVFC we must refresh the texture every frame
@@ -500,8 +524,9 @@ function VideoSphere({
         // Deliberately no invalidate() call here, so the loop halts.
         doneRef.current = true;
       } else if (opacityRef.current < 1) {
-        // Fade in smoothly: ~0.5 second to fully opaque at 60 fps
-        opacityRef.current = Math.min(1, opacityRef.current + 0.05);
+        // Fade in smoothly, frame-rate independent (~0.3 s): delta*3 matches
+        // the old +0.05/frame at 60 fps on every refresh rate.
+        opacityRef.current = Math.min(1, opacityRef.current + delta * 3);
         matRef.current.opacity = opacityRef.current;
         // Still fading in — ask for another frame.
         invalidate();
@@ -608,7 +633,12 @@ function VideoSphere({
       video.removeEventListener("error", handleError);
       setTexture(null);
       video.pause();
-      video.src = "";
+      // removeAttribute + load() is what actually releases the decoder and
+      // buffered data on Safari/iOS (which caps concurrent video decoders —
+      // rapid multi-hop chains would otherwise exhaust them and silently
+      // refuse to start the next clip). `src = ""` alone does not.
+      video.removeAttribute("src");
+      video.load();
       tex.dispose();
     };
   }, [videoUrl, textureYawOffset, wakeForFadeOut]);
@@ -711,6 +741,8 @@ function Scene({
   onPanoramaFadeInComplete,
   videoQueueIndex,
   nadirLogoUrl,
+  onPanoramaError,
+  panoramaRetryNonce,
 }) {
   return (
     <>
@@ -753,7 +785,9 @@ function Scene({
           />
         </Suspense>
       ))}
-      {/* Current panorama - fades in on top as mesh during transition */}
+      {/* Current panorama - fades in on top as mesh during transition.
+          Only the ACTIVE sphere reports load failures (backdrops are
+          decorative); retryNonce re-runs its texture load on demand. */}
       <PanoramaSphere
         key={node.id}
         panoramaUrl={node.panoramaUrl}
@@ -761,6 +795,8 @@ function Scene({
         opacity={panoramaOpacity}
         onFadeInComplete={onPanoramaFadeInComplete}
         yawOffset={node.initialYawOffset || 0}
+        onLoadError={onPanoramaError}
+        retryNonce={panoramaRetryNonce}
       />
       {/* Video sphere - rotated by video's yawOffset */}
       {/* Video sphere - keyed by queueIndex to force re-mount between sequential videos */}
@@ -821,11 +857,17 @@ export default function SphereViewer({
   spotHasVideo,
   videoQueueIndex,
   nadirLogoUrl,
+  onPanoramaError,
+  panoramaRetryNonce,
 }) {
   const [displayedNode, setDisplayedNode] = useState(node);
   const [previousNode, setPreviousNode] = useState(null);
   const [panoramaOpacity, setPanoramaOpacity] = useState(1);
   const prevVideoUrlRef = useRef(transitionVideoUrl);
+  // WebGL context loss (memory pressure on mobile): without these handlers
+  // the canvas goes permanently black. preventDefault() opts in to
+  // restoration; three re-uploads GPU resources on the next invalidated frame.
+  const [contextLost, setContextLost] = useState(false);
 
   // ─── Node-change detection DURING RENDER (React "derived state" pattern) ───
   // Setting state here makes React re-render immediately BEFORE committing, so
@@ -884,48 +926,69 @@ export default function SphereViewer({
   if (!node) return null;
 
   return (
-    <Canvas
-      // Render only when invalidate() is explicitly called (by an active
-      // fade, an in-progress video, or a camera drag) instead of ticking
-      // every browser frame forever. This is what actually stops useFrame
-      // from being called once its work is done — early-returning inside
-      // a useFrame callback alone does NOT stop the render loop.
-      frameloop="demand"
-      // Cap device-pixel-ratio at 2: on high-DPI screens rendering at dpr 3
-      // quadruples fragment work for no visible gain on a photo sphere.
-      dpr={[1, 2]}
-      camera={{ fov: 65, near: 0.1, far: 200, position: [0, 0, 0.01] }}
-      style={{
-        width: "100%",
-        height: "100%",
-        background: "#000",
-        userSelect: "none",
-        WebkitUserSelect: "none",
-        WebkitUserDrag: "none",
-      }}
-      onDragStart={(e) => e.preventDefault()}
-      gl={{ antialias: true }}
-    >
-      <Scene
-        node={node}
-        previousNode={previousNode}
-        transitionBackdrops={transitionBackdrops}
-        hotspotVisible={hotspotVisible}
-        onNavigate={onNavigate}
-        onSignClick={onSignClick}
-        preservedCameraYaw={preservedCameraYaw}
-        preservedCameraPitch={preservedCameraPitch}
-        onYawChange={onYawChange}
-        onPitchChange={onPitchChange}
-        transitionVideoUrl={transitionVideoUrl}
-        onTransitionComplete={onTransitionComplete}
-        onVideoFadeComplete={onVideoFadeComplete}
-        videoTextureYawOffset={videoTextureYawOffset}
-        panoramaOpacity={panoramaOpacity}
-        onPanoramaFadeInComplete={handleFadeInComplete}
-        videoQueueIndex={videoQueueIndex}
-        nadirLogoUrl={nadirLogoUrl}
-      />
-    </Canvas>
+    <>
+      <Canvas
+        // Render only when invalidate() is explicitly called (by an active
+        // fade, an in-progress video, or a camera drag) instead of ticking
+        // every browser frame forever. This is what actually stops useFrame
+        // from being called once its work is done — early-returning inside
+        // a useFrame callback alone does NOT stop the render loop.
+        frameloop="demand"
+        // Cap device-pixel-ratio at 2: on high-DPI screens rendering at dpr 3
+        // quadruples fragment work for no visible gain on a photo sphere.
+        dpr={[1, 2]}
+        camera={{ fov: 65, near: 0.1, far: 200, position: [0, 0, 0.01] }}
+        style={{
+          width: "100%",
+          height: "100%",
+          background: "#000",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          WebkitUserDrag: "none",
+        }}
+        onDragStart={(e) => e.preventDefault()}
+        gl={{ antialias: true }}
+        onCreated={({ gl }) => {
+          const el = gl.domElement;
+          el.addEventListener("webglcontextlost", (e) => {
+            e.preventDefault(); // allow restoration instead of a dead canvas
+            setContextLost(true);
+          });
+          el.addEventListener("webglcontextrestored", () => {
+            setContextLost(false);
+            invalidate(); // demand loop: kick a frame so three re-uploads
+          });
+        }}
+      >
+        <Scene
+          node={node}
+          previousNode={previousNode}
+          transitionBackdrops={transitionBackdrops}
+          hotspotVisible={hotspotVisible}
+          onNavigate={onNavigate}
+          onSignClick={onSignClick}
+          preservedCameraYaw={preservedCameraYaw}
+          preservedCameraPitch={preservedCameraPitch}
+          onYawChange={onYawChange}
+          onPitchChange={onPitchChange}
+          transitionVideoUrl={transitionVideoUrl}
+          onTransitionComplete={onTransitionComplete}
+          onVideoFadeComplete={onVideoFadeComplete}
+          videoTextureYawOffset={videoTextureYawOffset}
+          panoramaOpacity={panoramaOpacity}
+          onPanoramaFadeInComplete={handleFadeInComplete}
+          videoQueueIndex={videoQueueIndex}
+          nadirLogoUrl={nadirLogoUrl}
+          onPanoramaError={onPanoramaError}
+          panoramaRetryNonce={panoramaRetryNonce}
+        />
+      </Canvas>
+      {contextLost && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black">
+          <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+          <p className="text-white/70 text-sm">Restoring 3D view…</p>
+        </div>
+      )}
+    </>
   );
 }

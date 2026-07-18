@@ -184,6 +184,12 @@ const ProjectSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    // Every write path is a read-modify-write on this single document; two
+    // concurrent editors (admin + assigned employee, or two studio tabs) would
+    // otherwise silently last-write-win each other's changes. With this on,
+    // save() is guarded by __v and a stale save throws VersionError, which the
+    // global error handler maps to 409 (the studio surfaces the message).
+    optimisticConcurrency: true,
     // Return Maps as plain objects in JSON
     toJSON: {
       virtuals: true,

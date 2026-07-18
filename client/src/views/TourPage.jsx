@@ -31,6 +31,15 @@ export default function TourPage({ projectId }) {
 
   // ─── Render state for pre-rendering assets ───────────────────────────────────
   const [isPreRender, setIsPreRender] = useState(false);
+  // Synchronous re-entrancy lock: isPreRender is React state and commits a
+  // render late — two rapid clicks in the same frame would both pass the
+  // state check and double-navigate (restarting the queue + duplicating
+  // analytics). A ref flips instantly.
+  const navLockRef = useRef(false);
+
+  // ─── Active panorama failed to load (no preview either) ───────────────────
+  const [panoramaFailed, setPanoramaFailed] = useState(false);
+  const [panoRetryNonce, setPanoRetryNonce] = useState(0);
 
   // ─── Black fade overlay (no-video navigation + video-end transition) ──────
   const [fadeOverlay, setFadeOverlay] = useState(false);
@@ -103,6 +112,11 @@ export default function TourPage({ projectId }) {
     });
     prevNodeIdRef.current = activeNodeId;
   }, [activeNodeId, track]);
+
+  // A load failure belongs to one scene — moving to another node clears it.
+  useEffect(() => {
+    setPanoramaFailed(false);
+  }, [activeNodeId]);
 
   // ─── Current video segment — DERIVED synchronously from the queue ──────────
   // The URL, yaw and queue index therefore always update together in the same
@@ -178,102 +192,117 @@ export default function TourPage({ projectId }) {
     hotspotId = "",
   ) => {
     if (!project) return;
-    if (isPreRender) return; // Prevent multiple simultaneous preloads
+    if (navLockRef.current) return; // Prevent double-navigation (rage clicks)
+    // Stale hotspot pointing at a deleted node — refuse up front rather than
+    // playing a transition into a scene that doesn't exist.
+    if (!project.nodes?.[targetNodeId]) {
+      console.warn("Hotspot targets a missing node:", targetNodeId);
+      return;
+    }
+    navLockRef.current = true;
     setIsPreRender(true);
 
-    if (hotspotId) {
-      track("hotspot_click", { nodeId: activeNodeId, targetId: hotspotId });
-    }
-
-    const targetNode = project.nodes?.[targetNodeId];
-
-    // ─── Build the video queue ─────────────────────────────────────────────
-    // Transitions play the filmed clips as uploaded, at natural speed.
-    const asSegment = (baseUrl, yawOffset, startNodeId = "") =>
-      baseUrl
-        ? {
-            videoUrl: baseUrl,
-            yawOffset: yawOffset ?? 0,
-            startNodeId,
-          }
-        : null;
-
-    let resolvedQueue = [];
-
-    if (transitionVideos.length > 0) {
-      // Multi-video: sort by order
-      const sorted = [...transitionVideos].sort((a, b) => a.order - b.order);
-      resolvedQueue = sorted
-        .map((v) => asSegment(v.videoUrl, v.yawOffset, v.startNodeId || ""))
-        .filter(Boolean);
-    } else {
-      // Legacy single-video path
-      const sharedTransition = project.transitions?.[transitionId];
-      const resolvedUrl = videoUrl || sharedTransition?.videoUrl || null;
-
-      const segment = asSegment(resolvedUrl, videoYawOffset);
-      if (segment) resolvedQueue = [segment];
-    }
-
-    // The destination node of segment i is the NEXT segment's start point,
-    // or the hotspot's final target for the last segment.
-    const segmentEndNode = (i) => {
-      const endNodeId = resolvedQueue[i + 1]?.startNodeId || targetNodeId;
-      return project.nodes?.[endNodeId] || targetNode;
-    };
-
-    // Pre-render assets. Await the FIRST hop so playback starts promptly, then
-    // preload every remaining clip + waypoint panorama in the background so the
-    // chain plays through without stalling between hops.
     try {
-      if (resolvedQueue.length > 0) {
-        await preloadNextAssets(segmentEndNode(0), {
-          videoUrl: resolvedQueue[0].videoUrl,
-        });
-        resolvedQueue.slice(1).forEach((seg, idx) => {
-          const i = idx + 1;
-          preloadNextAssets(segmentEndNode(i), { videoUrl: seg.videoUrl }).catch(
-            () => {},
-          );
-        });
-      } else {
-        await preloadNextAssets(targetNode, null);
+      if (hotspotId) {
+        track("hotspot_click", { nodeId: activeNodeId, targetId: hotspotId });
       }
-    } catch (error) {
-      console.error("Pre-render failed:", error);
+
+      const targetNode = project.nodes?.[targetNodeId];
+
+      // ─── Build the video queue ───────────────────────────────────────────
+      // Transitions play the filmed clips as uploaded, at natural speed.
+      const asSegment = (baseUrl, yawOffset, startNodeId = "") =>
+        baseUrl
+          ? {
+              videoUrl: baseUrl,
+              yawOffset: yawOffset ?? 0,
+              startNodeId,
+            }
+          : null;
+
+      let resolvedQueue = [];
+
+      if (transitionVideos.length > 0) {
+        // Multi-video: sort by order
+        const sorted = [...transitionVideos].sort((a, b) => a.order - b.order);
+        resolvedQueue = sorted
+          .map((v) => asSegment(v.videoUrl, v.yawOffset, v.startNodeId || ""))
+          .filter(Boolean);
+      } else {
+        // Legacy single-video path
+        const sharedTransition = project.transitions?.[transitionId];
+        const resolvedUrl = videoUrl || sharedTransition?.videoUrl || null;
+
+        const segment = asSegment(resolvedUrl, videoYawOffset);
+        if (segment) resolvedQueue = [segment];
+      }
+
+      // The destination node of segment i is the NEXT segment's start point,
+      // or the hotspot's final target for the last segment.
+      const segmentEndNode = (i) => {
+        const endNodeId = resolvedQueue[i + 1]?.startNodeId || targetNodeId;
+        return project.nodes?.[endNodeId] || targetNode;
+      };
+
+      // Pre-render assets. Await the FIRST hop so playback starts promptly,
+      // then preload the remaining clips + waypoint panoramas in the
+      // background — SEQUENTIALLY, so a 3-hop chain doesn't hold every clip
+      // in flight at once (a parallel burst spiked memory on low-RAM phones
+      // at the exact moment the transition needs it most).
+      try {
+        if (resolvedQueue.length > 0) {
+          await preloadNextAssets(segmentEndNode(0), {
+            videoUrl: resolvedQueue[0].videoUrl,
+          });
+          (async () => {
+            for (let i = 1; i < resolvedQueue.length; i++) {
+              await preloadNextAssets(segmentEndNode(i), {
+                videoUrl: resolvedQueue[i].videoUrl,
+              }).catch(() => {});
+            }
+          })();
+        } else {
+          await preloadNextAssets(targetNode, null);
+        }
+      } catch (error) {
+        console.error("Pre-render failed:", error);
+      }
+
+      // ─── THREE INDEPENDENT VALUES ───
+      // 1. User Camera Drag (pure user input) - preserved across navigation
+      // 2. Target Panorama Rotation (from node.initialYawOffset) - rotates the image sphere
+      // 3. Video Rotation (from videoInitialYawOffset) - rotates the video sphere
+      const currentCameraYaw = cameraYawRef.current; // in radians
+      const currentCameraPitch = cameraPitchRef.current; // in radians
+
+      if (resolvedQueue.length > 0) {
+        // Video transition: preserve camera, set up queue.
+        // activeVideoUrl / videoTextureYawOffset are derived from the queue, so
+        // there's nothing extra to set here — navigateTo populates the queue.
+        setPreservedCameraYaw(currentCameraYaw);
+        setPreservedCameraPitch(currentCameraPitch);
+        setSpotHasVideo(true);
+        navigateTo(targetNodeId, resolvedQueue[0].videoUrl, resolvedQueue);
+      } else {
+        // No video: cross-fade transition, preserve camera
+        setPreservedCameraYaw(currentCameraYaw);
+        setPreservedCameraPitch(currentCameraPitch);
+        setSpotHasVideo(false);
+        cancelTransition();
+        setActiveNodeId(targetNodeId);
+      }
     } finally {
+      navLockRef.current = false;
       setIsPreRender(false);
-    }
-
-    // ─── THREE INDEPENDENT VALUES ───
-    // 1. User Camera Drag (pure user input) - preserved across navigation
-    // 2. Target Panorama Rotation (from node.initialYawOffset) - rotates the image sphere
-    // 3. Video Rotation (from videoInitialYawOffset) - rotates the video sphere
-    const currentCameraYaw = cameraYawRef.current; // in radians
-    const currentCameraPitch = cameraPitchRef.current; // in radians
-
-    if (resolvedQueue.length > 0) {
-      // Video transition: preserve camera, set up queue.
-      // activeVideoUrl / videoTextureYawOffset are derived from the queue, so
-      // there's nothing extra to set here — navigateTo populates the queue.
-      setPreservedCameraYaw(currentCameraYaw);
-      setPreservedCameraPitch(currentCameraPitch);
-      setSpotHasVideo(true);
-      navigateTo(targetNodeId, resolvedQueue[0].videoUrl, resolvedQueue);
-    } else {
-      // No video: cross-fade transition, preserve camera
-      setPreservedCameraYaw(currentCameraYaw);
-      setPreservedCameraPitch(currentCameraPitch);
-      setSpotHasVideo(false);
-      cancelTransition();
-      setActiveNodeId(targetNodeId);
     }
   };
 
   // ─── Sidebar quick-jump (no transition video) ─────────────────────────────
   const handleSidebarNavigate = async (targetNodeId) => {
     if (targetNodeId === activeNodeId || !project) return;
-    if (isPreRender) return; // Prevent multiple simultaneous preloads
+    if (navLockRef.current) return; // Prevent double-navigation (rage clicks)
+    if (!project.nodes?.[targetNodeId]) return; // stale entry — node deleted
+    navLockRef.current = true;
 
     cancelTransition();
     // Reset camera to 0,0 for sidebar navigation (fresh start)
@@ -290,6 +319,7 @@ export default function TourPage({ projectId }) {
     } catch (error) {
       console.error("Preload failed:", error);
     } finally {
+      navLockRef.current = false;
       setIsPreRender(false);
     }
 
@@ -383,6 +413,8 @@ export default function TourPage({ projectId }) {
         spotHasVideo={spotHasVideo}
         videoQueueIndex={videoQueueIndex}
         nadirLogoUrl={project?.info?.nadirLogoUrl || ""}
+        onPanoramaError={() => setPanoramaFailed(true)}
+        panoramaRetryNonce={panoRetryNonce}
       />
 
       {/* ── Navigation Sidebar ── */}
@@ -395,15 +427,20 @@ export default function TourPage({ projectId }) {
         audioEnabled={audioEnabled}
       />
 
-      {/* ── Pre-render indicator ── */}
-      {/* {isPreRender && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-            <p className="text-white/80 text-sm font-medium">Loading...</p>
-          </div>
+      {/* ── Pre-render indicator ──
+          Small, non-blocking pill: a click on a hotspot whose video isn't
+          cached can take seconds — with zero feedback users assume the tap
+          failed and rage-click. */}
+      {isPreRender && (
+        <div
+          className="absolute top-6 left-1/2 -translate-x-1/2 z-30 flex items-center
+                     gap-2 px-4 py-2 rounded-full bg-black/60 backdrop-blur-sm
+                     border border-white/10 pointer-events-none"
+        >
+          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <span className="text-white/80 text-xs font-medium">Loading…</span>
         </div>
-      )} */}
+      )}
 
       {/* ── Black fade overlay (only for sidebar navigation) ── */}
       {fadeOverlay && (
@@ -414,6 +451,35 @@ export default function TourPage({ projectId }) {
             transition: `opacity ${FADE_MS}ms ease`,
           }}
         />
+      )}
+
+      {/* ── Active panorama failed to load (no preview either) ── */}
+      {panoramaFailed && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="9" cy="9" r="2" />
+            <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+            <line x1="3" y1="3" x2="21" y2="21" />
+          </svg>
+          <p className="text-white text-lg font-semibold">
+            This scene couldn't load
+          </p>
+          <p className="text-white/50 text-sm max-w-sm">
+            Check your connection, then try again.
+          </p>
+          <button
+            onClick={() => {
+              setPanoramaFailed(false);
+              setPanoRetryNonce((n) => n + 1);
+            }}
+            className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20
+                       border border-white/20 text-white text-sm font-medium
+                       transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
       )}
 
       {/* ── Node title badge ── */}

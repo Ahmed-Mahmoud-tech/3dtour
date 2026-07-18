@@ -110,11 +110,21 @@ export const collect = async (req, res) => {
       if (err.code !== 11000) throw err; // 11000 = already counted today
     }
 
+    // Two first-of-the-day batches can race the upsert into the unique
+    // {tourId, date} index: both see no doc, one insert wins, the other
+    // throws E11000 — retry once as a plain $inc (the doc now exists).
+    const bumpDailyStat = async () => {
+      try {
+        await DailyStat.updateOne({ tourId, date }, { $inc: inc }, { upsert: true });
+      } catch (err) {
+        if (err.code !== 11000) throw err;
+        await DailyStat.updateOne({ tourId, date }, { $inc: inc });
+      }
+    };
+
     await Promise.all([
       AnalyticsEvent.insertMany(docs, { ordered: false }),
-      Object.keys(inc).length
-        ? DailyStat.updateOne({ tourId, date }, { $inc: inc }, { upsert: true })
-        : Promise.resolve(),
+      Object.keys(inc).length ? bumpDailyStat() : Promise.resolve(),
     ]);
 
     res.status(204).end();

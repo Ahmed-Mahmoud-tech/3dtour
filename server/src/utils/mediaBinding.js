@@ -37,27 +37,36 @@ const badRequest = (message) => {
  */
 export const bindIncomingMedia = async (body, projectId, userId = null) => {
   const urls = extractUploadUrls(body);
-  const pid = String(projectId);
 
   for (const url of urls) {
     if (!safeUploadPath(url)) throw badRequest(`Invalid media URL: ${url}`);
 
-    // Upsert the ledger row without racing on create (url is unique).
-    const row = await Upload.findOneAndUpdate(
-      { url },
-      { $setOnInsert: { url, project: null, uploadedBy: userId } },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    if (row.shared) continue; // legacy media reused across tours — not gated
-
-    if (row.project && String(row.project) !== pid)
+    // Claim atomically: one findOneAndUpdate that matches only rows this
+    // project may own (unowned, or already ours) and sets the owner in the
+    // same operation. The old read-then-save version was a TOCTOU — two
+    // concurrent saves from different projects could both read project:null
+    // and both "win". Now the loser's upsert collides with the unique url
+    // index (E11000) and is inspected below.
+    try {
+      await Upload.findOneAndUpdate(
+        {
+          url,
+          shared: { $ne: true },
+          $or: [{ project: null }, { project: projectId }],
+        },
+        {
+          $setOnInsert: { uploadedBy: userId },
+          $set: { project: projectId },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } catch (err) {
+      if (err.code !== 11000) throw err;
+      // A row exists that the claim filter refused to match: either another
+      // tour owns it, or it's a shared legacy file. Re-read to tell apart.
+      const existing = await Upload.findOne({ url }).lean();
+      if (existing?.shared) continue; // shared media is never gated
       throw badRequest('That media file belongs to another tour');
-
-    if (!row.project) {
-      row.project = projectId;
-      if (!row.uploadedBy && userId) row.uploadedBy = userId;
-      await row.save();
     }
   }
 };

@@ -8,18 +8,22 @@ import { safeUploadPath } from "../utils/uploadPaths.js";
 import { bindIncomingMedia, forgetUpload } from "../utils/mediaBinding.js";
 
 // Fire-and-forget: callers don't await — failures are logged, never fatal,
-// and the async unlink keeps the event loop free during bulk deletes. Also
-// drops the ownership-ledger row so it doesn't outlive the file.
+// and the async unlink keeps the event loop free during bulk deletes. The
+// ownership-ledger row is dropped only once the file is actually gone (or was
+// already gone) — a failed unlink must not leave an orphan file the ledger no
+// longer knows about.
 const deleteUploadByUrl = (url) => {
   // safeUploadPath guards against traversal ('/uploads/../../x') and
   // non-upload URLs — never resolve a stored URL to a path any other way.
   const filePath = safeUploadPath(url);
   if (!filePath) return;
-  forgetUpload(url);
-  fs.promises.unlink(filePath).catch((err) => {
-    if (err.code !== "ENOENT")
+  fs.promises
+    .unlink(filePath)
+    .then(() => forgetUpload(url))
+    .catch((err) => {
+      if (err.code === "ENOENT") return forgetUpload(url);
       console.error("Failed to delete file for url", url, err.message);
-  });
+    });
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -193,6 +197,15 @@ export const updateProject = asyncHandler(async (req, res) => {
     project.markModified("transitions");
   }
 
+  // A full nodes replace can orphan settings.initialNodeId — the viewer would
+  // then open on a scene that no longer exists (black screen). Reconcile it.
+  if (
+    project.settings.initialNodeId &&
+    !project.nodes.has(project.settings.initialNodeId)
+  ) {
+    project.settings.initialNodeId = project.nodes.keys().next().value || "";
+  }
+
   await project.save();
   res.json(project);
 });
@@ -353,6 +366,55 @@ export const deleteNode = asyncHandler(async (req, res) => {
   }
 
   project.nodes.delete(nodeId);
+
+  // Cascade: strip hotspots in OTHER nodes that target the deleted node.
+  // A dangling targetNodeId black-screens the viewer when clicked (the tour
+  // navigates to a node that no longer exists).
+  const candidateUrls = new Set();
+  for (const [otherId, other] of project.nodes.entries()) {
+    const hotspots = other.navigationHotspots || [];
+    const removed = hotspots.filter((h) => h.targetNodeId === nodeId);
+    if (removed.length === 0) continue;
+
+    removed.forEach((h) => {
+      if (h.transitionVideoUrl) candidateUrls.add(h.transitionVideoUrl);
+      (h.transitionVideos || []).forEach((v) => {
+        if (v.videoUrl) candidateUrls.add(v.videoUrl);
+      });
+      if (h.transitionId && project.transitions.has(h.transitionId)) {
+        const tr = project.transitions.get(h.transitionId);
+        if (tr?.videoUrl) candidateUrls.add(tr.videoUrl);
+        project.transitions.delete(h.transitionId);
+      }
+    });
+
+    other.navigationHotspots = hotspots.filter(
+      (h) => h.targetNodeId !== nodeId,
+    );
+    project.nodes.set(otherId, other);
+  }
+  project.markModified("nodes");
+
+  // Only delete cascade-removed clips that no surviving hotspot still uses —
+  // chain segments (transitionVideos) can be shared across hotspots.
+  if (candidateUrls.size > 0) {
+    const stillUsed = new Set();
+    for (const other of project.nodes.values()) {
+      (other.navigationHotspots || []).forEach((h) => {
+        if (h.transitionVideoUrl) stillUsed.add(h.transitionVideoUrl);
+        (h.transitionVideos || []).forEach((v) => {
+          if (v.videoUrl) stillUsed.add(v.videoUrl);
+        });
+      });
+    }
+    for (const t of project.transitions.values()) {
+      if (t?.videoUrl) stillUsed.add(t.videoUrl);
+    }
+    candidateUrls.forEach((u) => {
+      if (!stillUsed.has(u)) deleteUploadByUrl(u);
+    });
+  }
+
   if (project.settings.initialNodeId === nodeId) {
     const firstKey = project.nodes.keys().next().value;
     project.settings.initialNodeId = firstKey || "";
@@ -374,6 +436,13 @@ export const addHotspot = asyncHandler(async (req, res) => {
   const { nodeId } = req.params;
   const node = project.nodes.get(nodeId);
   if (!node) return res.status(404).json({ message: "Node not found" });
+
+  // A hotspot must point at a node that exists — dangling targetNodeIds
+  // black-screen the viewer when clicked.
+  if (!req.body.targetNodeId || !project.nodes.has(req.body.targetNodeId))
+    return res
+      .status(400)
+      .json({ message: "targetNodeId must reference an existing node" });
 
   await bindIncomingMedia(req.body, project._id, req.user._id);
 
@@ -408,6 +477,15 @@ export const updateHotspot = asyncHandler(async (req, res) => {
   const idx = node.navigationHotspots.findIndex((h) => h.id === hotspotId);
   if (idx === -1)
     return res.status(404).json({ message: "Hotspot not found" });
+
+  // If the update retargets the hotspot, the new target must exist
+  if (
+    req.body.targetNodeId !== undefined &&
+    !project.nodes.has(req.body.targetNodeId)
+  )
+    return res
+      .status(400)
+      .json({ message: "targetNodeId must reference an existing node" });
 
   await bindIncomingMedia(req.body, project._id, req.user._id);
 

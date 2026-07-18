@@ -57,10 +57,28 @@ export function useTour(projectId) {
         const { data } = await axios.get(
           IS_STATIC ? "./tour.json" : `${API_BASE}/projects/${projectId}/public`,
         );
+
+        // Shape-check before touching data.nodes: a truncated response or a
+        // malformed tour.json (static export) must produce a clear message,
+        // not a TypeError mislabeled as a network failure.
+        if (!data || typeof data !== "object" || typeof data.nodes !== "object" || data.nodes === null) {
+          setError("This tour's data is malformed or incomplete.");
+          return;
+        }
+
+        const nodeIds = Object.keys(data.nodes);
+        if (nodeIds.length === 0) {
+          setError("This tour has no scenes yet.");
+          return;
+        }
+
         setProject(data);
 
+        // initialNodeId can go stale (node deleted after it was set) — only
+        // trust it when the node actually exists, else start at the first one.
+        const configured = data.settings?.initialNodeId;
         const initialId =
-          data.settings?.initialNodeId || Object.keys(data.nodes)[0];
+          configured && data.nodes[configured] ? configured : nodeIds[0];
         setActiveNodeId(initialId);
       } catch (err) {
         setError(err.response?.data?.message || "Failed to load tour");
@@ -137,6 +155,13 @@ export function useTour(projectId) {
     (targetNodeId, videoUrl, queue = []) => {
       if (!project) return;
       if (targetNodeId === activeNodeId) return;
+      // Defensive: a hotspot can point at a node that no longer exists (tour
+      // edited after this session loaded it). Navigating there would unmount
+      // the whole viewer — stay where we are instead.
+      if (!project.nodes?.[targetNodeId]) {
+        console.warn("Navigation target no longer exists:", targetNodeId);
+        return;
+      }
 
       if (queue.length > 0) {
         // Multi-video queue: start playing the first video
@@ -206,13 +231,54 @@ export function useTour(projectId) {
       setTransition(null);
       setIsTransitioning(false);
       setHotspotVisible(true);
-      setActiveNodeId(targetNodeId);
+      // Land on the target only if it still exists; otherwise stay put
+      // rather than navigating the viewer into a black screen.
+      if (project?.nodes?.[targetNodeId]) setActiveNodeId(targetNodeId);
       setVideoQueue([]);
       setVideoQueueIndex(0);
     }
   }, [transition, videoQueue, videoQueueIndex, project]);
 
-  const activeNode = project?.nodes?.[activeNodeId] || null;
+  // ─── Transition watchdog ───────────────────────────────────────────────────
+  // A clip that stalls mid-buffer (network drop, tab backgrounded on mobile)
+  // fires neither `ended` nor `error` — without this, isTransitioning stays
+  // true forever and the hotspots never come back. Re-armed per queue segment;
+  // clips are 5–15 s, so 30 s means genuinely stuck.
+  useEffect(() => {
+    if (!transition) return;
+    const timer = setTimeout(() => {
+      console.warn("Transition watchdog: video never finished — forcing completion");
+      const targetNodeId = transition.targetNodeId;
+      setTransition(null);
+      setIsTransitioning(false);
+      setHotspotVisible(true);
+      setVideoQueue([]);
+      setVideoQueueIndex(0);
+      if (project?.nodes?.[targetNodeId]) setActiveNodeId(targetNodeId);
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [transition, videoQueueIndex, project]);
+
+  // ─── Self-heal a dangling active node ──────────────────────────────────────
+  // If activeNodeId ever points at nothing (stale data edge cases), snap to
+  // the initial node / first node instead of rendering an empty screen.
+  useEffect(() => {
+    if (!project?.nodes || !activeNodeId) return;
+    if (project.nodes[activeNodeId]) return;
+    const configured = project.settings?.initialNodeId;
+    const fallback =
+      (configured && project.nodes[configured] && configured) ||
+      Object.keys(project.nodes)[0] ||
+      null;
+    console.warn("Active node missing — falling back to:", fallback);
+    setActiveNodeId(fallback);
+  }, [project, activeNodeId]);
+
+  const activeNode =
+    project?.nodes?.[activeNodeId] ||
+    // Render fallback for the frame(s) before the self-heal effect runs
+    (project?.nodes ? Object.values(project.nodes)[0] : null) ||
+    null;
 
   return {
     project,

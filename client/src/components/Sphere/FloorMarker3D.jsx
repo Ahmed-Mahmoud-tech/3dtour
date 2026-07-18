@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, invalidate } from "@react-three/fiber";
 import * as THREE from "three";
 import { degToPosition } from "../../utils/coordUtils.js";
 
@@ -227,6 +227,14 @@ export default function FloorMarker3D({
     if (dashedRef.current) {
       dashedRef.current.rotation.z = t * 0.4;
     }
+
+    // The canvas runs frameloop="demand": useFrame only ticks while someone
+    // requests frames. The breath/bob/hover animations above are continuous,
+    // so keep asking for the next frame while the marker is mounted —
+    // otherwise markers freeze mid-breath the moment fades/drags go idle.
+    // (Markers unmount during video transitions, so this never competes with
+    // clip playback for frame budget.)
+    invalidate();
   });
 
   const handleClick = (e) => {

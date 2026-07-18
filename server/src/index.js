@@ -86,8 +86,19 @@ app.use('/api/analytics', analyticsRoutes);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve uploaded files as static assets. Filenames are timestamp-unique, so
-// they never change content — safe to cache aggressively.
+// Serve uploaded files as static assets. Panoramas/images/audio are fully
+// optimized BEFORE their URL is handed out, so those filenames never change
+// content — safe to cache aggressively. Transition videos are the exception:
+// uploadTransitionVideo returns the URL immediately and the optimizer rewrites
+// the SAME file in the background, so a video fetched during that window must
+// not be pinned as `immutable` for 30 days. no-cache forces an ETag
+// revalidation on reuse — a cheap 304 once the file is stable.
+app.use(
+  '/uploads/videos',
+  express.static(path.join(__dirname, '../uploads/videos'), {
+    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+  })
+);
 app.use(
   '/uploads',
   express.static(path.join(__dirname, '../uploads'), {
@@ -116,6 +127,12 @@ app.use((err, _req, res, _next) => {
     return res.status(400).json({ message: 'Invalid id format' });
   if (err.name === 'ValidationError')
     return res.status(400).json({ message: err.message });
+  // Optimistic-concurrency conflict (Project schema): a stale save() lost the
+  // race to a concurrent editor — the client should reload and retry.
+  if (err.name === 'VersionError')
+    return res.status(409).json({
+      message: 'This project was modified by someone else. Reload to get the latest version, then re-apply your change.',
+    });
 
   const status = err.status || err.statusCode || 500;
   if (status >= 500) console.error(err.stack);

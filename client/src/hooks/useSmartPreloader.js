@@ -129,9 +129,22 @@ export function useSmartPreloader() {
     const timer = setTimeout(() => controller.abort(), 15000);
 
     return fetch(url, { signal: controller.signal })
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.blob(); // drain the body so the full file lands in cache
+        // Drain the body chunk-by-chunk so the full file lands in the HTTP
+        // cache WITHOUT ever holding the whole clip in JS memory (res.blob()
+        // spiked the heap by the clip's full size — fatal on low-RAM phones
+        // when several chain segments preload around a transition).
+        const reader = res.body?.getReader?.();
+        if (reader) {
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            const { done } = await reader.read();
+            if (done) break;
+          }
+        } else {
+          await res.blob(); // ancient-browser fallback
+        }
       })
       .then(() => {
         videoCache.current.add(url);
