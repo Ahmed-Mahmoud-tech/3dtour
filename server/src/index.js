@@ -57,6 +57,12 @@ app.use((_req, res, next) => {
   next();
 });
 
+// Analytics mounts BEFORE the global 10mb JSON parser: it carries its own
+// strict 64kb parser (and accepts text/plain for sendBeacon), and body-parser
+// skips bodies another parser already consumed — mounting it here is the only
+// way its small limit actually applies to application/json too.
+app.use('/api/analytics', analyticsRoutes);
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -75,7 +81,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/analytics', analyticsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/messages', messageRoutes);
 
@@ -83,9 +88,17 @@ app.use('/api/messages', messageRoutes);
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 // ─── Global error handler ─────────────────────────────────────────────────────
+// Every async controller routes here (via asyncHandler) — this is the single
+// place that decides what error detail a client may see.
 app.use((err, _req, res, _next) => {
-  console.error(err.stack);
-  const status = err.status || 500;
+  // Malformed ids / schema-rejected payloads are client errors, not crashes
+  if (err.name === 'CastError')
+    return res.status(400).json({ message: 'Invalid id format' });
+  if (err.name === 'ValidationError')
+    return res.status(400).json({ message: err.message });
+
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error(err.stack);
   // Never leak internal error details (stack-adjacent messages) on 500s
   const message = status >= 500 ? 'Internal server error' : err.message;
   res.status(status).json({ message });

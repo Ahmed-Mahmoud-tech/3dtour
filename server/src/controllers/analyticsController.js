@@ -4,6 +4,7 @@ import DailyStat from '../models/DailyStat.js';
 import Visitor from '../models/Visitor.js';
 import Project from '../models/Project.js';
 import Subscription from '../models/Subscription.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const EVENT_TYPES = new Set([
   'session_start',
@@ -130,24 +131,20 @@ export const collect = async (req, res) => {
  * Loads the tour and verifies the requester may see its dashboard:
  * the assigned owner, or any platform admin. Attaches req.project.
  */
-export const canAccessTour = async (req, res, next) => {
-  try {
-    if (!mongoose.isValidObjectId(req.params.tourId))
-      return res.status(400).json({ message: 'Bad tour id' });
+export const canAccessTour = asyncHandler(async (req, res, next) => {
+  if (!mongoose.isValidObjectId(req.params.tourId))
+    return res.status(400).json({ message: 'Bad tour id' });
 
-    const project = await Project.findById(req.params.tourId);
-    if (!project) return res.status(404).json({ message: 'Tour not found' });
+  const project = await Project.findById(req.params.tourId);
+  if (!project) return res.status(404).json({ message: 'Tour not found' });
 
-    const isOwner = project.owner && project.owner.equals(req.user._id);
-    if (!isOwner && req.user.role !== 'admin')
-      return res.status(403).json({ message: 'You do not have access to this tour' });
+  const isOwner = project.owner && project.owner.equals(req.user._id);
+  if (!isOwner && req.user.role !== 'admin')
+    return res.status(403).json({ message: 'You do not have access to this tour' });
 
-    req.project = project;
-    next();
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+  req.project = project;
+  next();
+});
 
 const sumMapField = (docs, field) => {
   const out = {};
@@ -159,125 +156,125 @@ const sumMapField = (docs, field) => {
   return out;
 };
 
+// Query params arrive from qs as strings, arrays or objects — only a plain
+// YYYY-MM-DD string may reach the DailyStat date comparison.
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const dayParam = (v, fallback) =>
+  typeof v === 'string' && DAY_RE.test(v) ? v : fallback;
+
 // GET /api/dashboard/:tourId?from&to
 // Everything the dashboard needs in one call: tour labels, subscription,
 // range totals, and the daily series. Defaults to the last 30 days.
-export const getDashboard = async (req, res) => {
-  try {
-    const project = req.project;
+export const getDashboard = asyncHandler(async (req, res) => {
+  const project = req.project;
 
-    const to = req.query.to || utcDay();
-    const from =
-      req.query.from || utcDay(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000));
+  const to = dayParam(req.query.to, utcDay());
+  const from = dayParam(
+    req.query.from,
+    utcDay(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000))
+  );
 
-    const [days, subscription] = await Promise.all([
-      DailyStat.find({ tourId: project._id, date: { $gte: from, $lte: to } })
-        .sort({ date: 1 })
-        .lean(),
-      // Subscriptions are per project (each tour is paid for separately)
-      Subscription.findOne({ project: project._id }).select('-history').lean(),
-    ]);
+  const [days, subscription] = await Promise.all([
+    DailyStat.find({ tourId: project._id, date: { $gte: from, $lte: to } })
+      .sort({ date: 1 })
+      .lean(),
+    // Subscriptions are per project (each tour is paid for separately)
+    Subscription.findOne({ project: project._id }).select('-history').lean(),
+  ]);
 
-    // Plain objects after lean() (Mongoose stores Maps as objects internally)
-    const totals = {
-      uniqueVisitors: days.reduce((s, d) => s + (d.uniqueVisitors || 0), 0),
-      sessions: days.reduce((s, d) => s + (d.sessions || 0), 0),
-      nodeViews: sumMapField(days, 'nodeViews'),
-      hotspotClicks: sumMapField(days, 'hotspotClicks'),
-      popupOpens: sumMapField(days, 'popupOpens'),
-      transitions: sumMapField(days, 'transitions'),
-    };
+  // Plain objects after lean() (Mongoose stores Maps as objects internally)
+  const totals = {
+    uniqueVisitors: days.reduce((s, d) => s + (d.uniqueVisitors || 0), 0),
+    sessions: days.reduce((s, d) => s + (d.sessions || 0), 0),
+    nodeViews: sumMapField(days, 'nodeViews'),
+    hotspotClicks: sumMapField(days, 'hotspotClicks'),
+    popupOpens: sumMapField(days, 'popupOpens'),
+    transitions: sumMapField(days, 'transitions'),
+  };
 
-    // Friendly labels so the dashboard never shows raw ids.
-    const labels = { nodes: {}, hotspots: {}, signs: {} };
-    for (const [nid, node] of project.nodes.entries()) {
-      labels.nodes[nid] = node.displayName;
-      for (const h of node.navigationHotspots || []) {
-        const target = project.nodes.get(h.targetNodeId);
-        labels.hotspots[h.id] = {
-          fromNode: node.displayName,
-          toNode: target ? target.displayName : h.targetNodeId,
-        };
-      }
-      for (const s of node.infoSigns || []) {
-        labels.signs[s.id] = {
-          title: s.popupContent?.title || 'Untitled sign',
-          node: node.displayName,
-        };
-      }
+  // Friendly labels so the dashboard never shows raw ids.
+  const labels = { nodes: {}, hotspots: {}, signs: {} };
+  for (const [nid, node] of project.nodes.entries()) {
+    labels.nodes[nid] = node.displayName;
+    for (const h of node.navigationHotspots || []) {
+      const target = project.nodes.get(h.targetNodeId);
+      labels.hotspots[h.id] = {
+        fromNode: node.displayName,
+        toNode: target ? target.displayName : h.targetNodeId,
+      };
     }
-
-    const sub = subscription
-      ? {
-          ...subscription,
-          isActive:
-            subscription.status === 'active' && new Date(subscription.expiresAt) > new Date(),
-        }
-      : null;
-
-    res.json({
-      tour: { id: project._id, title: project.info.title },
-      range: { from, to },
-      totals,
-      days: days.map((d) => ({
-        date: d.date,
-        uniqueVisitors: d.uniqueVisitors || 0,
-        sessions: d.sessions || 0,
-      })),
-      labels,
-      subscription: sub,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    for (const s of node.infoSigns || []) {
+      labels.signs[s.id] = {
+        title: s.popupContent?.title || 'Untitled sign',
+        node: node.displayName,
+      };
+    }
   }
-};
+
+  const sub = subscription
+    ? {
+        ...subscription,
+        isActive:
+          subscription.status === 'active' && new Date(subscription.expiresAt) > new Date(),
+      }
+    : null;
+
+  res.json({
+    tour: { id: project._id, title: project.info.title },
+    range: { from, to },
+    totals,
+    days: days.map((d) => ({
+      date: d.date,
+      uniqueVisitors: d.uniqueVisitors || 0,
+      sessions: d.sessions || 0,
+    })),
+    labels,
+    subscription: sub,
+  });
+});
 
 // GET /api/dashboard/:tourId/sessions?page=1&limit=15
 // Recent visitor sessions with their navigation path, reconstructed from raw
 // events (available for the raw-event retention window). Paginated:
 // returns { items, total, page, pages }.
-export const getRecentSessions = async (req, res) => {
-  try {
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 100);
-    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+export const getRecentSessions = asyncHandler(async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 100);
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
 
-    const [result] = await AnalyticsEvent.aggregate([
-      { $match: { tourId: req.project._id } },
-      { $sort: { sessionId: 1, seq: 1 } },
-      {
-        $group: {
-          _id: '$sessionId',
-          visitorId: { $first: '$visitorId' },
-          startedAt: { $min: '$ts' },
-          endedAt: { $max: '$ts' },
-          events: { $sum: 1 },
-          path: {
-            $push: {
-              $cond: [{ $eq: ['$type', 'scene_view'] }, '$nodeId', '$$REMOVE'],
-            },
+  const [result] = await AnalyticsEvent.aggregate([
+    { $match: { tourId: req.project._id } },
+    { $sort: { sessionId: 1, seq: 1 } },
+    {
+      $group: {
+        _id: '$sessionId',
+        visitorId: { $first: '$visitorId' },
+        startedAt: { $min: '$ts' },
+        endedAt: { $max: '$ts' },
+        events: { $sum: 1 },
+        path: {
+          $push: {
+            $cond: [{ $eq: ['$type', 'scene_view'] }, '$nodeId', '$$REMOVE'],
           },
         },
       },
-      {
-        $facet: {
-          items: [
-            { $sort: { startedAt: -1 } },
-            { $skip: (page - 1) * limit },
-            { $limit: limit },
-          ],
-          count: [{ $count: 'total' }],
-        },
+    },
+    {
+      $facet: {
+        items: [
+          { $sort: { startedAt: -1 } },
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+        ],
+        count: [{ $count: 'total' }],
       },
-    ]);
+    },
+  ]);
 
-    const total = result.count[0]?.total || 0;
-    res.json({
-      items: result.items,
-      total,
-      page,
-      pages: Math.max(Math.ceil(total / limit), 1),
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+  const total = result.count[0]?.total || 0;
+  res.json({
+    items: result.items,
+    total,
+    page,
+    pages: Math.max(Math.ceil(total / limit), 1),
+  });
+});

@@ -22,6 +22,9 @@ const userSchema = new mongoose.Schema(
     mustChangePassword: { type: Boolean, default: false },
     status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     lastLoginAt: { type: Date, default: null },
+    // Set on every password change/reset; protect() rejects JWTs minted
+    // before it, so old sessions die the moment the password changes.
+    passwordChangedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -31,6 +34,7 @@ userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
+  if (!this.isNew) this.passwordChangedAt = new Date();
   next();
 });
 

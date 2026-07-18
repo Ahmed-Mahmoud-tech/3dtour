@@ -3,11 +3,11 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { ZipArchive } from 'archiver';
 import Project from '../models/Project.js';
+import { UPLOADS_ROOT, safeUploadPath } from '../utils/uploadPaths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const UPLOADS_ROOT = path.join(__dirname, '../../uploads');
 // Prebuilt static player (client/: `npm run build:static` → dist-static/)
 const PLAYER_DIR =
   process.env.STATIC_PLAYER_DIR || path.join(__dirname, '../../../client/dist-static');
@@ -16,13 +16,16 @@ const PLAYER_DIR =
  * Recursively rewrites every '/uploads/...' URL in the tour JSON to a
  * relative 'media/...' path and records the underlying file, so the zip is
  * fully self-contained. Non-upload strings (icon names, external URLs) are
- * left untouched.
+ * left untouched. safeUploadPath rejects traversal, so a stored URL like
+ * '/uploads/../.env' can neither read outside the uploads dir nor create a
+ * zip-slip entry in the archive.
  */
 const rewriteMediaUrls = (value, files) => {
   if (typeof value === 'string') {
-    if (value.startsWith('/uploads/')) {
-      const rel = value.slice('/uploads/'.length); // e.g. panoramas/x.webp
-      files.set(`media/${rel}`, path.join(UPLOADS_ROOT, rel));
+    const abs = safeUploadPath(value);
+    if (abs) {
+      const rel = path.relative(UPLOADS_ROOT, abs).replace(/\\/g, '/');
+      files.set(`media/${rel}`, abs);
       return `media/${rel}`;
     }
     return value;
@@ -56,6 +59,7 @@ export const exportProject = async (req, res) => {
     // Internal fields that mean nothing outside the platform
     delete tour.createdBy;
     delete tour.owner;
+    delete tour.assignedTo;
     delete tour._id;
     delete tour.__v;
 
@@ -72,7 +76,7 @@ export const exportProject = async (req, res) => {
     const archive = new ZipArchive({ zlib: { level: 6 } });
     archive.on('error', (err) => {
       console.error('Export archive error:', err);
-      if (!res.headersSent) res.status(500).json({ message: err.message });
+      if (!res.headersSent) res.status(500).json({ message: 'Export failed' });
       else res.destroy(err);
     });
     archive.on('warning', (err) => console.warn('Export warning:', err.message));
@@ -96,6 +100,7 @@ export const exportProject = async (req, res) => {
     await archive.finalize();
   } catch (err) {
     console.error('Export failed:', err);
-    if (!res.headersSent) res.status(500).json({ message: err.message });
+    // Never leak internal error details (paths, driver messages) to the client
+    if (!res.headersSent) res.status(500).json({ message: 'Export failed' });
   }
 };

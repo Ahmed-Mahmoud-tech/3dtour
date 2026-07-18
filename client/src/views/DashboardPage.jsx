@@ -128,10 +128,13 @@ function ChangePasswordForm({ forced, onDone, onCancel }) {
     setBusy(true);
     setError("");
     try {
-      await apiFetch("/auth/password", {
+      const data = await apiFetch("/auth/password", {
         method: "PUT",
         body: JSON.stringify({ currentPassword: current, newPassword: next }),
       });
+      // Changing the password invalidates the old token — keep the session
+      // alive with the re-issued one from the response.
+      if (data?.token) localStorage.setItem(TOKEN_KEY, data.token);
       onDone();
     } catch (err) {
       setError(err.message);

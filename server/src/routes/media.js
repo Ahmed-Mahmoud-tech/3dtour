@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { protect } from "../middleware/auth.js";
+import { protect, requireRole } from "../middleware/auth.js";
 import {
   setUploadDir,
   uploadPanorama,
@@ -14,42 +14,69 @@ import {
   uploadTransitionVideo,
   streamVideo,
 } from "../controllers/mediaController.js";
+import { scopeFilter } from "../controllers/projectController.js";
+import Project from "../models/Project.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = Router();
 
 // Public video streaming endpoint (supports HTTP Range)
 router.get("/stream/:folder/:filename", streamVideo);
 
-// Protected upload endpoints
+// Uploads are for staff building tours — owner tokens must never be able to
+// write to the server's disk.
+router.use(protect, requireRole("admin", "employee"));
+
+// Size/type rejections from multer are client errors, not server faults —
+// surface the real reason as a 400 instead of a masked 500.
+const runUpload = (uploader) => (req, res, next) =>
+  uploader(req, res, (err) => {
+    if (!err) return next();
+    err.status = 400;
+    next(err);
+  });
+
+// The transition-video route names a project — verify the caller may edit it
+// (same scoping as the studio) BEFORE multer writes anything to disk.
+const requireProjectAccess = asyncHandler(async (req, _res, next) => {
+  const project = await Project.findOne({
+    _id: req.params.projectId,
+    ...scopeFilter(req),
+  }).select("_id");
+  if (!project) {
+    const err = new Error("Project not found");
+    err.status = 404;
+    throw err;
+  }
+  next();
+});
+
 router.post(
   "/panorama",
-  protect,
   setUploadDir("panoramas"),
-  (req, res, next) => uploadPanorama(req, res, next),
+  runUpload(uploadPanorama),
   uploadPanoramaHandler,
 );
 
 router.post(
   "/audio",
-  protect,
   setUploadDir("audio"),
-  (req, res, next) => uploadAudio(req, res, next),
+  runUpload(uploadAudio),
   uploadAudioHandler,
 );
 
 router.post(
   "/image",
-  protect,
   setUploadDir("images"),
-  (req, res, next) => uploadImage(req, res, next),
+  runUpload(uploadImage),
   uploadImageHandler,
 );
 
 router.post(
   "/video/:projectId",
-  protect,
+  requireProjectAccess,
   setUploadDir("videos"),
-  (req, res, next) => uploadVideo(req, res, next),
+  runUpload(uploadVideo),
   uploadTransitionVideo,
 );
 

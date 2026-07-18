@@ -53,6 +53,15 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // Swap in a re-issued token: changing the password invalidates every token
+  // minted before it, and the server hands back a fresh one in the response.
+  const adoptToken = (newToken) => {
+    if (!newToken) return;
+    localStorage.setItem('admin_token', newToken);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    setToken(newToken);
+  };
+
   // Merge fresh fields into the cached user (e.g. after a password change
   // clears mustChangePassword server-side).
   const updateUser = (fields) => setUser((u) => (u ? { ...u, ...fields } : u));
@@ -60,7 +69,7 @@ export function AuthProvider({ children }) {
   const isAdmin = user?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, isAdmin, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, token, loading, isAdmin, login, logout, updateUser, adoptToken }}>
       {children}
     </AuthContext.Provider>
   );

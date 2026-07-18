@@ -21,16 +21,24 @@ const EXPIRED_BACKFILL_WINDOW = 14 * DAY;
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-const ownerEmailContent = (key, tourTitle, expiresAt) => {
+// Tour titles are staff-authored free text — escape before embedding in HTML
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+
+const ownerEmailContent = (key, rawTitle, expiresAt) => {
   const date = fmtDate(expiresAt);
+  const tourTitle = escapeHtml(rawTitle);
   const daysLeft = Math.max(Math.ceil((new Date(expiresAt) - Date.now()) / DAY), 0);
 
+  // Subject is a plain-text header — use the raw title there
   const subject =
     key === 'expired'
-      ? `Your Gateverse tour subscription has expired — ${tourTitle}`
+      ? `Your Gateverse tour subscription has expired — ${rawTitle}`
       : key === 'expiry_1d'
-        ? `Your Gateverse tour subscription expires tomorrow — ${tourTitle}`
-        : `Your Gateverse tour subscription expires in ${daysLeft} days — ${tourTitle}`;
+        ? `Your Gateverse tour subscription expires tomorrow — ${rawTitle}`
+        : `Your Gateverse tour subscription expires in ${daysLeft} days — ${rawTitle}`;
 
   const lead =
     key === 'expired'

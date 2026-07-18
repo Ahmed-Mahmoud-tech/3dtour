@@ -146,8 +146,9 @@ const ProjectSchema = new mongoose.Schema(
       of: TransitionSchema,
       default: () => new Map(),
     },
-    // The admin who built the tour in the studio.
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    // The admin who built the tour in the studio. Indexed: every admin
+    // studio list/read is scoped by it (see scopeFilter).
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
     // The client (role 'owner') this tour is assigned to. Drives dashboard
     // access and subscription gating of the public route. null = unassigned
     // (admin-internal tour, never gated).

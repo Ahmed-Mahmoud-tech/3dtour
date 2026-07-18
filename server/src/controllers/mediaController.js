@@ -1,16 +1,13 @@
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 import {
   optimizePanorama,
   optimizeVideoInPlace,
   optimizeImage,
   optimizeAudio,
 } from '../utils/mediaOptimizer.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const UPLOADS_ROOT = path.join(__dirname, '../../uploads');
+import { UPLOADS_ROOT } from '../utils/uploadPaths.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,74 +20,58 @@ const toPublicUrl = (filePath) => {
 // ─── Upload Panorama ──────────────────────────────────────────────────────────
 
 // POST /api/media/panorama
-export const uploadPanoramaHandler = async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    // Convert to WebP (~10x smaller than PNG) + tiny preview for blur-up loading
-    const { filePath, previewPath } = await optimizePanorama(req.file.path);
-    res.status(201).json({
-      url: toPublicUrl(filePath),
-      previewUrl: toPublicUrl(previewPath),
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+export const uploadPanoramaHandler = asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+  // Convert to WebP (~10x smaller than PNG) + tiny preview for blur-up loading
+  const { filePath, previewPath } = await optimizePanorama(req.file.path);
+  res.status(201).json({
+    url: toPublicUrl(filePath),
+    previewUrl: toPublicUrl(previewPath),
+  });
+});
 
 // ─── Upload Audio ─────────────────────────────────────────────────────────────
 
 // POST /api/media/audio
-export const uploadAudioHandler = async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    // Heavy sources (WAV, 320k MP3…) are re-encoded to AAC 128k
-    const finalPath = await optimizeAudio(req.file.path);
-    res.status(201).json({ url: toPublicUrl(finalPath) });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+export const uploadAudioHandler = asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+  // Heavy sources (WAV, 320k MP3…) are re-encoded to AAC 128k
+  const finalPath = await optimizeAudio(req.file.path);
+  res.status(201).json({ url: toPublicUrl(finalPath) });
+});
 
 // ─── Upload Image (popup cover) ───────────────────────────────────────────────
 
 // POST /api/media/image
-export const uploadImageHandler = async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    // Convert to WebP, cap at 2048 wide — popup covers/logos never need more
-    const finalPath = await optimizeImage(req.file.path);
-    res.status(201).json({ url: toPublicUrl(finalPath) });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+export const uploadImageHandler = asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+  // Convert to WebP, cap at 2048 wide — popup covers/logos never need more
+  const finalPath = await optimizeImage(req.file.path);
+  res.status(201).json({ url: toPublicUrl(finalPath) });
+});
 
 // ─── Upload Transition Video ──────────────────────────────────────────────────
 
 // POST /api/media/video/:projectId
-export const uploadTransitionVideo = async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+export const uploadTransitionVideo = asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-    const videoUrl = toPublicUrl(req.file.path);
+  const videoUrl = toPublicUrl(req.file.path);
 
-    // Respond immediately; the clip is shrunk in place in the background
-    res.status(201).json({ videoUrl });
+  // Respond immediately; the clip is shrunk in place in the background
+  res.status(201).json({ videoUrl });
 
-    // Shrink the clip in place (same filename, so the URL we just returned
-    // stays valid).
-    // backupDir keeps the camera master in _originals — the served file is
-    // a lossy transcode, and having the master is what made the July 2026
-    // frame-corruption recovery possible (see scripts/restore-originals.mjs)
-    await optimizeVideoInPlace(req.file.path, {
-      backupDir: path.join(UPLOADS_ROOT, '_originals'),
-    }).catch((err) =>
-      console.error('Video optimization failed (continuing with original):', err.message),
-    );
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+  // Shrink the clip in place (same filename, so the URL we just returned
+  // stays valid).
+  // backupDir keeps the camera master in _originals — the served file is
+  // a lossy transcode, and having the master is what made the July 2026
+  // frame-corruption recovery possible (see scripts/restore-originals.mjs)
+  await optimizeVideoInPlace(req.file.path, {
+    backupDir: path.join(UPLOADS_ROOT, '_originals'),
+  }).catch((err) =>
+    console.error('Video optimization failed (continuing with original):', err.message),
+  );
+});
 
 // ─── Video Streaming (HTTP Range support) ─────────────────────────────────────
 
@@ -107,7 +88,7 @@ const STREAM_TYPES = {
   '.m4a': 'audio/mp4',
 };
 
-export const streamVideo = (req, res) => {
+export const streamVideo = asyncHandler(async (req, res) => {
   const { folder, filename } = req.params;
 
   // Prevent path traversal attacks; only real upload folders are streamable
@@ -116,12 +97,26 @@ export const streamVideo = (req, res) => {
   if (!STREAM_FOLDERS.has(safeFolder)) return res.status(404).json({ message: 'File not found' });
   const filePath = path.join(UPLOADS_ROOT, safeFolder, safeFilename);
 
-  if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'File not found' });
+  let stat;
+  try {
+    stat = await fs.promises.stat(filePath); // async — never block the event loop per request
+  } catch {
+    return res.status(404).json({ message: 'File not found' });
+  }
 
-  const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
   const contentType = STREAM_TYPES[path.extname(safeFilename).toLowerCase()] || 'video/mp4';
+
+  // A mid-stream disk error can't become a JSON 500 (headers are gone) —
+  // just tear the connection down.
+  const pipeSafely = (stream) => {
+    stream.on('error', (err) => {
+      console.error('Stream error for', filePath, err.message);
+      res.destroy(err);
+    });
+    stream.pipe(res);
+  };
 
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');
@@ -133,7 +128,6 @@ export const streamVideo = (req, res) => {
     }
 
     const chunkSize = end - start + 1;
-    const fileStream = fs.createReadStream(filePath, { start, end });
 
     res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -141,13 +135,13 @@ export const streamVideo = (req, res) => {
       'Content-Length': chunkSize,
       'Content-Type': contentType,
     });
-    fileStream.pipe(res);
+    pipeSafely(fs.createReadStream(filePath, { start, end }));
   } else {
     res.writeHead(200, {
       'Content-Length': fileSize,
       'Accept-Ranges': 'bytes',
       'Content-Type': contentType,
     });
-    fs.createReadStream(filePath).pipe(res);
+    pipeSafely(fs.createReadStream(filePath));
   }
-};
+});

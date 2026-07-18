@@ -1,13 +1,9 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { UPLOADS_ROOT } from '../utils/uploadPaths.js';
 
 // ─── Ensure upload directories exist ─────────────────────────────────────────
-const UPLOADS_ROOT = path.join(__dirname, '../../uploads');
 const dirs = ['panoramas', 'videos', 'audio', 'images'];
 dirs.forEach((dir) => {
   const fullPath = path.join(UPLOADS_ROOT, dir);
@@ -28,9 +24,10 @@ const storage = multer.diskStorage({
 });
 
 // ─── File type filters ─────────────────────────────────────────────────────────
+// Anchored: the whole extension must match, so 'x.svgpng' can't sneak through.
 const imageFilter = (_req, file, cb) => {
-  const allowed = /jpeg|jpg|png|webp/;
-  if (allowed.test(path.extname(file.originalname).toLowerCase()) && allowed.test(file.mimetype)) {
+  const ext = /^\.(jpe?g|png|webp)$/.test(path.extname(file.originalname).toLowerCase());
+  if (ext && /jpeg|jpg|png|webp/.test(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error('Only JPEG, PNG, and WebP images are allowed'));
@@ -38,11 +35,8 @@ const imageFilter = (_req, file, cb) => {
 };
 
 const videoFilter = (_req, file, cb) => {
-  const allowed = /mp4|webm|mov/;
-  if (
-    allowed.test(path.extname(file.originalname).toLowerCase()) &&
-    file.mimetype.startsWith('video/')
-  ) {
+  const ext = /^\.(mp4|webm|mov)$/.test(path.extname(file.originalname).toLowerCase());
+  if (ext && file.mimetype.startsWith('video/')) {
     cb(null, true);
   } else {
     cb(new Error('Only MP4, WebM, and MOV video files are allowed'));
@@ -50,11 +44,8 @@ const videoFilter = (_req, file, cb) => {
 };
 
 const audioFilter = (_req, file, cb) => {
-  const allowed = /mp3|wav|ogg|aac/;
-  if (
-    allowed.test(path.extname(file.originalname).toLowerCase()) &&
-    file.mimetype.startsWith('audio/')
-  ) {
+  const ext = /^\.(mp3|wav|ogg|aac)$/.test(path.extname(file.originalname).toLowerCase());
+  if (ext && file.mimetype.startsWith('audio/')) {
     cb(null, true);
   } else {
     cb(new Error('Only MP3, WAV, OGG, and AAC audio files are allowed'));

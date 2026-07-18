@@ -9,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
 // employee) via PUT /api/auth/password. When `forced` (mustChangePassword
 // after an admin reset) the modal can't be dismissed until it succeeds.
 export default function ChangePasswordModal({ forced = false, onClose }) {
-  const { updateUser } = useAuth();
+  const { updateUser, adoptToken } = useAuth();
   const [form, setForm] = useState({ current: "", next: "", confirm: "" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -26,10 +26,12 @@ export default function ChangePasswordModal({ forced = false, onClose }) {
     setSubmitting(true);
     setError("");
     try {
-      await axios.put(`${API_BASE}/auth/password`, {
+      const { data } = await axios.put(`${API_BASE}/auth/password`, {
         currentPassword: form.current,
         newPassword: form.next,
       });
+      // The change invalidated the old token — switch to the re-issued one
+      adoptToken(data.token);
       updateUser({ mustChangePassword: false });
       onClose?.();
     } catch (err) {

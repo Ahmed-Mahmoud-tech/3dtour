@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { protect } from '../middleware/auth.js';
+import { protect, requireRole } from '../middleware/auth.js';
 import {
   getProjects,
   getProject,
@@ -24,11 +24,16 @@ const router = Router();
 // Public route — viewer fetches project by ID (subscription-gated)
 router.get('/:id/public', getPublicProject);
 
-// Protected routes — admin CRUD
+// Protected routes — studio CRUD (scoped per role inside the controllers).
+// Create/delete are admin-only; employees only edit assigned projects.
 router.use(protect);
 
-router.route('/').get(getProjects).post(createProject);
-router.route('/:id').get(getProject).put(updateProject).delete(deleteProject);
+router.route('/').get(getProjects).post(requireRole('admin'), createProject);
+router
+  .route('/:id')
+  .get(getProject)
+  .put(updateProject)
+  .delete(requireRole('admin'), deleteProject);
 
 // Node management
 router.post('/:id/nodes', addNode);
