@@ -1,8 +1,10 @@
-import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Project from '../models/Project.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+
+// Request bodies here are validated by validateBody(...) at the route, so
+// controllers trust the shape and only do business checks (uniqueness, etc.).
 
 const addToPlan = (from, plan) => {
   const d = new Date(from);
@@ -12,14 +14,6 @@ const addToPlan = (from, plan) => {
 };
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// name/email/password must be non-empty strings (objects would reach Mongo as
-// query operators; anything else would blow up bcrypt).
-const validCredentials = (...fields) =>
-  fields.every((f) => typeof f === 'string' && f.trim());
-
-// For optional profile updates: reject non-string junk, allow undefined.
-const invalidOptionalString = (v) => v !== undefined && (typeof v !== 'string' || !v.trim());
 
 // Shared list-query helpers: ?q searches name/email, ?page&limit paginate.
 // Without `page` the caller gets the legacy full array.
@@ -43,14 +37,9 @@ const pageParams = (req, defLimit = 10) => ({
 // Subscriptions are per PROJECT, not per owner — they're created when a tour
 // is sold, via POST /api/admin/projects/:id/subscription.
 export const createOwner = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password } = req.body; // validated + normalized
 
-  if (!validCredentials(name, email, password))
-    return res.status(400).json({ message: 'Name, email and password are required' });
-  if (password.length < 8)
-    return res.status(400).json({ message: 'Password must be at least 8 characters' });
-
-  const existing = await User.findOne({ email: email.toLowerCase().trim() });
+  const existing = await User.findOne({ email });
   if (existing) return res.status(409).json({ message: 'Email already registered' });
 
   const owner = await User.create({
@@ -119,12 +108,10 @@ export const updateOwner = asyncHandler(async (req, res) => {
   const owner = await User.findOne({ _id: req.params.id, role: 'owner' });
   if (!owner) return res.status(404).json({ message: 'Owner not found' });
 
-  const { name, email, status } = req.body;
-  if (invalidOptionalString(name) || invalidOptionalString(email))
-    return res.status(400).json({ message: 'name and email must be non-empty strings' });
+  const { name, email, status } = req.body; // all optional, validated
   if (name) owner.name = name;
   if (email) owner.email = email;
-  if (status && ['active', 'suspended'].includes(status)) owner.status = status;
+  if (status) owner.status = status;
 
   try {
     await owner.save();
@@ -137,9 +124,7 @@ export const updateOwner = asyncHandler(async (req, res) => {
 
 // PUT /api/admin/owners/:id/password  — assign a new temporary password
 export const resetOwnerPassword = asyncHandler(async (req, res) => {
-  const { password } = req.body;
-  if (typeof password !== 'string' || password.length < 8)
-    return res.status(400).json({ message: 'Password must be at least 8 characters' });
+  const { password } = req.body; // validated min 8
 
   const owner = await User.findOne({ _id: req.params.id, role: 'owner' });
   if (!owner) return res.status(404).json({ message: 'Owner not found' });
@@ -171,16 +156,11 @@ export const deleteOwner = asyncHandler(async (req, res) => {
 // Body: { plan: 'monthly'|'yearly', expiresAt? } — expiresAt overrides the
 // computed period end when the admin wants a custom date.
 export const upsertSubscription = asyncHandler(async (req, res) => {
-  const { plan, expiresAt } = req.body;
-  if (!['monthly', 'yearly'].includes(plan))
-    return res.status(400).json({ message: 'plan must be monthly or yearly' });
-
-  let customExpiry = null;
-  if (expiresAt !== undefined && expiresAt !== null && expiresAt !== '') {
-    customExpiry = new Date(expiresAt);
-    if (Number.isNaN(customExpiry.getTime()))
-      return res.status(400).json({ message: 'expiresAt must be a valid date' });
-  }
+  const { plan, expiresAt } = req.body; // plan enum + parseable-or-absent expiresAt
+  const customExpiry =
+    expiresAt !== undefined && expiresAt !== null && expiresAt !== ''
+      ? new Date(expiresAt)
+      : null;
 
   const project = await Project.findById(req.params.id).select('_id');
   if (!project) return res.status(404).json({ message: 'Project not found' });
@@ -218,9 +198,7 @@ export const upsertSubscription = asyncHandler(async (req, res) => {
 
 // PUT /api/admin/projects/:id/subscription  — cancel or reactivate
 export const setSubscriptionStatus = asyncHandler(async (req, res) => {
-  const { status } = req.body;
-  if (!['active', 'canceled'].includes(status))
-    return res.status(400).json({ message: 'status must be active or canceled' });
+  const { status } = req.body; // validated enum active|canceled
 
   const sub = await Subscription.findOne({ project: req.params.id });
   if (!sub) return res.status(404).json({ message: 'Subscription not found' });
@@ -241,14 +219,9 @@ export const setSubscriptionStatus = asyncHandler(async (req, res) => {
 
 // POST /api/admin/employees
 export const createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password } = req.body; // validated + normalized
 
-  if (!validCredentials(name, email, password))
-    return res.status(400).json({ message: 'Name, email and password are required' });
-  if (password.length < 8)
-    return res.status(400).json({ message: 'Password must be at least 8 characters' });
-
-  const existing = await User.findOne({ email: email.toLowerCase().trim() });
+  const existing = await User.findOne({ email });
   if (existing) return res.status(409).json({ message: 'Email already registered' });
 
   const employee = await User.create({
@@ -302,12 +275,10 @@ export const updateEmployee = asyncHandler(async (req, res) => {
   const employee = await User.findOne({ _id: req.params.id, role: 'employee' });
   if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
-  const { name, email, status } = req.body;
-  if (invalidOptionalString(name) || invalidOptionalString(email))
-    return res.status(400).json({ message: 'name and email must be non-empty strings' });
+  const { name, email, status } = req.body; // all optional, validated
   if (name) employee.name = name;
   if (email) employee.email = email;
-  if (status && ['active', 'suspended'].includes(status)) employee.status = status;
+  if (status) employee.status = status;
 
   try {
     await employee.save();
@@ -320,9 +291,7 @@ export const updateEmployee = asyncHandler(async (req, res) => {
 
 // PUT /api/admin/employees/:id/password  — assign a new temporary password
 export const resetEmployeePassword = asyncHandler(async (req, res) => {
-  const { password } = req.body;
-  if (typeof password !== 'string' || password.length < 8)
-    return res.status(400).json({ message: 'Password must be at least 8 characters' });
+  const { password } = req.body; // validated min 8
 
   const employee = await User.findOne({ _id: req.params.id, role: 'employee' });
   if (!employee) return res.status(404).json({ message: 'Employee not found' });
@@ -350,18 +319,16 @@ export const deleteEmployee = asyncHandler(async (req, res) => {
 
 // PUT /api/admin/projects/:id/assign-employee  — body: { employeeId: string | null }
 export const assignProjectEmployee = asyncHandler(async (req, res) => {
-  const { employeeId } = req.body;
+  const { employeeId } = req.body; // null | 24-hex ObjectId (validated)
 
   if (employeeId) {
-    if (!mongoose.isValidObjectId(employeeId))
-      return res.status(400).json({ message: 'Invalid employeeId' });
     const employee = await User.findOne({ _id: employeeId, role: 'employee' });
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
   }
 
   const project = await Project.findByIdAndUpdate(
     req.params.id,
-    { $set: { assignedTo: employeeId || null } },
+    { $set: { assignedTo: employeeId } },
     { new: true }
   ).select('info.title assignedTo');
   if (!project) return res.status(404).json({ message: 'Project not found' });
@@ -374,6 +341,8 @@ export const assignProjectEmployee = asyncHandler(async (req, res) => {
 // Suspension and expiry mode drive the public-route gating in
 // projectController.getPublicProject; expiryDate is required for mode 'date'.
 export const updateProjectAccess = asyncHandler(async (req, res) => {
+  // Validated by projectAccessSchema: suspended is boolean|absent, expiryMode
+  // is a valid enum|absent, and a 'date' mode is guaranteed a parseable date.
   const { suspended, expiryMode, expiryDate } = req.body;
 
   const project = await Project.findById(req.params.id).select(
@@ -381,27 +350,13 @@ export const updateProjectAccess = asyncHandler(async (req, res) => {
   );
   if (!project) return res.status(404).json({ message: 'Project not found' });
 
-  if (suspended !== undefined) {
-    if (typeof suspended !== 'boolean')
-      return res.status(400).json({ message: 'suspended must be a boolean' });
-    project.suspended = suspended;
-  }
+  if (suspended !== undefined) project.suspended = suspended;
 
   if (expiryMode !== undefined) {
-    if (!['subscription', 'date', 'lifetime'].includes(expiryMode))
-      return res
-        .status(400)
-        .json({ message: 'expiryMode must be subscription, date or lifetime' });
-    if (expiryMode === 'date') {
-      const date = new Date(expiryDate);
-      if (!expiryDate || Number.isNaN(date.getTime()))
-        return res
-          .status(400)
-          .json({ message: 'A valid expiryDate is required for mode date' });
-      project.expiry = { mode: 'date', date };
-    } else {
-      project.expiry = { mode: expiryMode, date: null };
-    }
+    project.expiry =
+      expiryMode === 'date'
+        ? { mode: 'date', date: new Date(expiryDate) }
+        : { mode: expiryMode, date: null };
   }
 
   await project.save();
@@ -410,18 +365,16 @@ export const updateProjectAccess = asyncHandler(async (req, res) => {
 
 // PUT /api/admin/projects/:id/assign  — body: { ownerId: string | null }
 export const assignProjectOwner = asyncHandler(async (req, res) => {
-  const { ownerId } = req.body;
+  const { ownerId } = req.body; // null | 24-hex ObjectId (validated)
 
   if (ownerId) {
-    if (!mongoose.isValidObjectId(ownerId))
-      return res.status(400).json({ message: 'Invalid ownerId' });
     const owner = await User.findOne({ _id: ownerId, role: 'owner' });
     if (!owner) return res.status(404).json({ message: 'Owner not found' });
   }
 
   const project = await Project.findByIdAndUpdate(
     req.params.id,
-    { $set: { owner: ownerId || null } },
+    { $set: { owner: ownerId } },
     { new: true }
   ).select('info.title owner');
   if (!project) return res.status(404).json({ message: 'Project not found' });

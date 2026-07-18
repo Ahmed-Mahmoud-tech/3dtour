@@ -8,6 +8,7 @@ import {
 } from '../utils/mediaOptimizer.js';
 import { UPLOADS_ROOT } from '../utils/uploadPaths.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { recordUpload } from '../utils/mediaBinding.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,10 +25,10 @@ export const uploadPanoramaHandler = asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   // Convert to WebP (~10x smaller than PNG) + tiny preview for blur-up loading
   const { filePath, previewPath } = await optimizePanorama(req.file.path);
-  res.status(201).json({
-    url: toPublicUrl(filePath),
-    previewUrl: toPublicUrl(previewPath),
-  });
+  const url = toPublicUrl(filePath);
+  const previewUrl = toPublicUrl(previewPath);
+  await Promise.all([recordUpload(url, req.user._id), recordUpload(previewUrl, req.user._id)]);
+  res.status(201).json({ url, previewUrl });
 });
 
 // ─── Upload Audio ─────────────────────────────────────────────────────────────
@@ -37,7 +38,9 @@ export const uploadAudioHandler = asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   // Heavy sources (WAV, 320k MP3…) are re-encoded to AAC 128k
   const finalPath = await optimizeAudio(req.file.path);
-  res.status(201).json({ url: toPublicUrl(finalPath) });
+  const url = toPublicUrl(finalPath);
+  await recordUpload(url, req.user._id);
+  res.status(201).json({ url });
 });
 
 // ─── Upload Image (popup cover) ───────────────────────────────────────────────
@@ -47,7 +50,9 @@ export const uploadImageHandler = asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   // Convert to WebP, cap at 2048 wide — popup covers/logos never need more
   const finalPath = await optimizeImage(req.file.path);
-  res.status(201).json({ url: toPublicUrl(finalPath) });
+  const url = toPublicUrl(finalPath);
+  await recordUpload(url, req.user._id);
+  res.status(201).json({ url });
 });
 
 // ─── Upload Transition Video ──────────────────────────────────────────────────
@@ -57,6 +62,10 @@ export const uploadTransitionVideo = asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
   const videoUrl = toPublicUrl(req.file.path);
+
+  // Bind to the project from the (access-checked) route param so it's owned
+  // before the client attaches it to a hotspot.
+  await recordUpload(videoUrl, req.user._id, req.params.projectId);
 
   // Respond immediately; the clip is shrunk in place in the background
   res.status(201).json({ videoUrl });

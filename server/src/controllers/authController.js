@@ -18,14 +18,8 @@ export const register = asyncHandler(async (req, res) => {
       .status(403)
       .json({ message: 'Registration is disabled. Accounts are created by the administrator.' });
 
+  // Shape validated by validateBody(registerSchema)
   const { name, email, password } = req.body;
-
-  if ([name, email, password].some((f) => typeof f !== 'string' || !f.trim()))
-    return res.status(400).json({ message: 'Name, email and password are required' });
-
-  if (password.length < 8)
-    return res.status(400).json({ message: 'Password must be at least 8 characters' });
-
   const user = await User.create({ name, email, password, role: 'admin' });
   const token = signToken(user._id);
 
@@ -34,13 +28,11 @@ export const register = asyncHandler(async (req, res) => {
 
 // POST /api/auth/login
 export const login = asyncHandler(async (req, res) => {
+  // validateBody(loginSchema) guarantees strings and normalizes email to
+  // trimmed lowercase — an object here can never reach Mongo as an operator.
   const { email, password } = req.body;
 
-  // Strings only — an object here would become a MongoDB query operator
-  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
-    return res.status(400).json({ message: 'Email and password are required' });
-
-  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  const user = await User.findOne({ email });
   if (!user || !(await user.comparePassword(password)))
     return res.status(401).json({ message: 'Invalid credentials' });
 
@@ -62,14 +54,8 @@ export const getMe = async (req, res) => {
 // PUT /api/auth/password
 // Self-service password change for any authenticated user (admin, employee or owner).
 export const changePassword = asyncHandler(async (req, res) => {
+  // Shape validated by validateBody(changePasswordSchema)
   const { currentPassword, newPassword } = req.body;
-
-  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' ||
-      !currentPassword || !newPassword)
-    return res.status(400).json({ message: 'Current and new password are required' });
-
-  if (newPassword.length < 8)
-    return res.status(400).json({ message: 'Password must be at least 8 characters' });
 
   // req.user was loaded without the password hash — re-fetch with it.
   const user = await User.findById(req.user._id);

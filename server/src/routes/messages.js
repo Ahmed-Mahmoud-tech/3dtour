@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { submitMessage } from '../controllers/messageController.js';
+import { validateBody } from '../utils/validate.js';
+import { submitMessageSchema } from '../validators/schemas.js';
 
 const router = Router();
 
@@ -17,6 +19,6 @@ const messageLimiter = rateLimit({
   message: { message: 'Too many messages, please try again in a minute.' },
 });
 
-router.post('/:tourId', messageLimiter, submitMessage);
+router.post('/:tourId', messageLimiter, validateBody(submitMessageSchema), submitMessage);
 
 export default router;

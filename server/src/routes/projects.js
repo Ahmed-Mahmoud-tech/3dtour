@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { protect, requireRole } from '../middleware/auth.js';
+import { validateBody } from '../utils/validate.js';
+import { createProjectSchema } from '../validators/schemas.js';
 import {
   getProjects,
   getProject,
@@ -28,7 +30,7 @@ router.get('/:id/public', getPublicProject);
 // Create/delete are admin-only; employees only edit assigned projects.
 router.use(protect);
 
-router.route('/').get(getProjects).post(requireRole('admin'), createProject);
+router.route('/').get(getProjects).post(requireRole('admin'), validateBody(createProjectSchema), createProject);
 router
   .route('/:id')
   .get(getProject)

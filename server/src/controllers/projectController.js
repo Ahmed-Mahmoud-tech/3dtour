@@ -2,16 +2,20 @@ import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import Project from "../models/Project.js";
 import Subscription from "../models/Subscription.js";
+import Upload from "../models/Upload.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { safeUploadPath } from "../utils/uploadPaths.js";
+import { bindIncomingMedia, forgetUpload } from "../utils/mediaBinding.js";
 
 // Fire-and-forget: callers don't await — failures are logged, never fatal,
-// and the async unlink keeps the event loop free during bulk deletes.
+// and the async unlink keeps the event loop free during bulk deletes. Also
+// drops the ownership-ledger row so it doesn't outlive the file.
 const deleteUploadByUrl = (url) => {
   // safeUploadPath guards against traversal ('/uploads/../../x') and
   // non-upload URLs — never resolve a stored URL to a path any other way.
   const filePath = safeUploadPath(url);
   if (!filePath) return;
+  forgetUpload(url);
   fs.promises.unlink(filePath).catch((err) => {
     if (err.code !== "ENOENT")
       console.error("Failed to delete file for url", url, err.message);
@@ -143,8 +147,7 @@ export const getPublicProject = asyncHandler(async (req, res) => {
 // POST /api/projects  (route-gated: requireRole('admin') — employees work on
 // assigned projects, they never create)
 export const createProject = asyncHandler(async (req, res) => {
-  const { title, author, nadirLogoUrl } = req.body;
-  if (!title) return res.status(400).json({ message: "Title is required" });
+  const { title, author, nadirLogoUrl } = req.body; // validated (title required)
 
   const project = await Project.create({
     info: {
@@ -164,6 +167,9 @@ export const updateProject = asyncHandler(async (req, res) => {
     ...scopeFilter(req),
   });
   if (!project) return res.status(404).json({ message: "Project not found" });
+
+  // Reject any media URL that belongs to another tour; claim new ones.
+  await bindIncomingMedia(req.body, project._id, req.user._id);
 
   const { info, settings, nodes, transitions } = req.body;
   if (info) {
@@ -224,10 +230,11 @@ export const deleteProject = asyncHandler(async (req, res) => {
   // Delete files from disk (fire-and-forget, non-blocking)
   urls.forEach((u) => deleteUploadByUrl(u));
 
-  // Finally remove the project document + its subscription
+  // Finally remove the project document + its subscription + upload-ledger rows
   await Promise.all([
     Project.findOneAndDelete({ _id: req.params.id, createdBy: req.user._id }),
     Subscription.deleteOne({ project: req.params.id }),
+    Upload.deleteMany({ project: req.params.id }),
   ]);
   res.json({ message: "Project deleted" });
 });
@@ -247,6 +254,8 @@ export const addNode = asyncHandler(async (req, res) => {
     return res
       .status(400)
       .json({ message: "displayName and panoramaUrl are required" });
+
+  await bindIncomingMedia(req.body, project._id, req.user._id);
 
   const id = nodeId();
   const node = {
@@ -276,6 +285,8 @@ export const updateNode = asyncHandler(async (req, res) => {
   const { nodeId } = req.params;
   if (!project.nodes.has(nodeId))
     return res.status(404).json({ message: "Node not found" });
+
+  await bindIncomingMedia(req.body, project._id, req.user._id);
 
   // 1. Convert the Mongoose Map document to a plain JavaScript object
   const existingNode = project.nodes.get(nodeId);
@@ -364,6 +375,8 @@ export const addHotspot = asyncHandler(async (req, res) => {
   const node = project.nodes.get(nodeId);
   if (!node) return res.status(404).json({ message: "Node not found" });
 
+  await bindIncomingMedia(req.body, project._id, req.user._id);
+
   // Separate transition data from hotspot fields
   const { _transitionData, ...hotspotBody } = req.body;
 
@@ -395,6 +408,8 @@ export const updateHotspot = asyncHandler(async (req, res) => {
   const idx = node.navigationHotspots.findIndex((h) => h.id === hotspotId);
   if (idx === -1)
     return res.status(404).json({ message: "Hotspot not found" });
+
+  await bindIncomingMedia(req.body, project._id, req.user._id);
 
   // Separate transition data from hotspot fields
   const { _transitionData, ...hotspotBody } = req.body;
@@ -470,6 +485,8 @@ export const addSign = asyncHandler(async (req, res) => {
   const node = project.nodes.get(nodeId);
   if (!node) return res.status(404).json({ message: "Node not found" });
 
+  await bindIncomingMedia(req.body, project._id, req.user._id);
+
   const sign = { id: signId(), ...req.body };
   node.infoSigns = [...(node.infoSigns || []), sign];
   project.nodes.set(nodeId, node);
@@ -491,6 +508,8 @@ export const updateSign = asyncHandler(async (req, res) => {
 
   const idx = node.infoSigns.findIndex((s) => s.id === signId);
   if (idx === -1) return res.status(404).json({ message: "Sign not found" });
+
+  await bindIncomingMedia(req.body, project._id, req.user._id);
 
   // If updating popup cover image, delete the previous uploaded file
   const existingSign = node.infoSigns[idx];

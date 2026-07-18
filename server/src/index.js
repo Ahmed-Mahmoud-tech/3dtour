@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
@@ -36,6 +37,33 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 app.disable('x-powered-by');
 
+// Baseline security headers via helmet. This is a JSON API + static file host
+// (the Next/Vite frontends live on other origins), so a strict CSP here does
+// not constrain the apps — it only hardens direct responses. HSTS is enabled
+// in production (behind nginx TLS); harmless-to-omit in plain-HTTP dev.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        // API returns JSON and static media; nothing should load active content.
+        scriptSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'none'"],
+      },
+    },
+    // The frontends embed /uploads media cross-origin — don't block that.
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts:
+      process.env.NODE_ENV === 'production'
+        ? { maxAge: 15552000, includeSubDomains: true }
+        : false,
+    referrerPolicy: { policy: 'no-referrer' },
+  })
+);
+
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -48,14 +76,6 @@ app.use(
     credentials: true,
   })
 );
-
-// Baseline security headers (API + uploaded files)
-app.use((_req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  next();
-});
 
 // Analytics mounts BEFORE the global 10mb JSON parser: it carries its own
 // strict 64kb parser (and accepts text/plain for sendBeacon), and body-parser

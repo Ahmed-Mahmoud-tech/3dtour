@@ -3,37 +3,19 @@ import Message from '../models/Message.js';
 import Project from '../models/Project.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
-
 // POST /api/messages/:tourId  (public, rate-limited)
-// Body: { name, email?, message, nodeId? }
+// Body validated by validateBody(submitMessageSchema): { name, email?, message, nodeId? }
 export const submitMessage = asyncHandler(async (req, res) => {
   const { tourId } = req.params;
   if (!mongoose.isValidObjectId(tourId))
     return res.status(400).json({ message: 'Bad tour id' });
 
-  let body = req.body || {};
-  if (typeof body === 'string') {
-    try {
-      body = JSON.parse(body);
-    } catch {
-      return res.status(400).json({ message: 'Bad payload' });
-    }
-  }
-  const name = String(body.name || '').trim().slice(0, 100);
-  const email = String(body.email || '').trim().slice(0, 200);
-  const text = String(body.message || '').trim().slice(0, 2000);
-  const nodeId = String(body.nodeId || '').slice(0, 64);
-
-  if (!name || !text)
-    return res.status(400).json({ message: 'Name and message are required' });
-  if (email && !EMAIL_RE.test(email))
-    return res.status(400).json({ message: 'Invalid email address' });
+  const { name, email = '', message, nodeId = '' } = req.body;
 
   const project = await Project.findById(tourId).select('_id').lean();
   if (!project) return res.status(404).json({ message: 'Tour not found' });
 
-  await Message.create({ tourId, name, email, body: text, nodeId });
+  await Message.create({ tourId, name, email, body: message, nodeId });
   res.status(201).json({ ok: true });
 });
 
