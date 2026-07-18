@@ -173,6 +173,18 @@ export const STRINGS = {
           title: 'Your brand front and center',
           body: 'Your logo, your domain, your identity — the tour carries your name, not a foreign platform’s.',
         },
+        {
+          title: 'Free 3-month hosting',
+          body: 'Launch instantly with 3 months of free hosting included. No extra setup and no hosting costs to get started.',
+        },
+        {
+          title: 'Host on your own server',
+          body: 'Need full control? Deploy the tour on your own VPS, dedicated server or cloud infrastructure — with complete ownership.',
+        },
+        {
+          title: 'Private client notes',
+          body: 'Add private notes anywhere in the dashboard to keep important information and reminders for each client or project.',
+        },
       ],
     },
     portfolio: {
@@ -382,6 +394,18 @@ export const STRINGS = {
         {
           title: 'البراند بتاعك في الصدارة',
           body: 'لوجوك ودومينك وهويتك — الجولة شايلة اسمك إنت، مش اسم منصة أجنبية.',
+        },
+        {
+          title: 'استضافة مجانية ٣ شهور',
+          body: 'ابدأ فورًا مع ٣ شهور استضافة مجانية. من غير أي تجهيز إضافي ولا تكاليف استضافة عشان تبدأ.',
+        },
+        {
+          title: 'استضفها على سيرفرك إنت',
+          body: 'عايز تحكم كامل؟ نزّل الجولة على الـ VPS بتاعك أو سيرفر مخصص أو سحابة — بملكية كاملة ليك.',
+        },
+        {
+          title: 'ملاحظات خاصة للعملاء',
+          body: 'ضيف ملاحظات خاصة في أي مكان في لوحة التحكم عشان تحتفظ بالمعلومات المهمة والتذكيرات لكل عميل أو مشروع.',
         },
       ],
     },
