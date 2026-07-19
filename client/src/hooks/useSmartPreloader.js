@@ -218,11 +218,13 @@ export function useSmartPreloader() {
   );
 
   /**
-   * Blocking pre-play preload: the start node's panorama plus its nearest
-   * `neighborCount` nodes by graph distance. Loads SEQUENTIALLY (a parallel
-   * burst of full-size panoramas spikes memory on low-RAM phones and starves
-   * the first — most urgent — download of bandwidth) and reports progress
-   * after each node so the loading screen can show a real bar.
+   * Blocking pre-play preload: the start node plus its nearest `neighborCount`
+   * nodes by graph distance — FULL assets per node (panorama AND that node's
+   * transition videos), so both looking around and the first navigations are
+   * instant. Nodes load SEQUENTIALLY (a parallel burst of panoramas + clips
+   * spikes memory on low-RAM phones and starves the first — most urgent —
+   * download of bandwidth) and progress is reported after each node so the
+   * loading screen can show a real bar.
    * Every underlying loader resolves even on failure, so this always settles.
    * @param {Object} project - Full project object
    * @param {string} startNodeId - Node the tour opens on
@@ -243,20 +245,19 @@ export function useSmartPreloader() {
       onProgress?.(loaded, total);
 
       for (const { nodeId } of targets) {
-        const url = pickPanoramaUrl(project.nodes[nodeId]);
-        if (url && !imageCache.current.has(url)) {
-          await preloadImage(url);
-        }
+        // Panorama + this node's outgoing transition videos
+        await preloadNode(project.nodes[nodeId], project);
         loadedNodes.current.add(nodeId);
         loaded += 1;
         onProgress?.(loaded, total);
       }
     },
-    [getNodesByProximity, preloadImage],
+    [getNodesByProximity, preloadNode],
   );
 
   /**
-   * Preload ALL remaining nodes ordered by proximity to the active node.
+   * Preload ALL remaining nodes (panorama + transition videos) ordered by
+   * proximity to the active node.
    * This runs SILENTLY in the background - never blocks user interaction.
    * @param {Object} project - Full project object
    * @param {string} activeNodeId - Current active node
@@ -286,13 +287,10 @@ export function useSmartPreloader() {
         }
 
         const { nodeId } = remaining[i];
-        const node = project.nodes[nodeId];
 
-        // Load just the panorama (videos will load on-demand during navigation)
-        const neighborUrl = pickPanoramaUrl(node);
-        if (neighborUrl && !imageCache.current.has(neighborUrl)) {
-          await preloadImage(neighborUrl);
-        }
+        // Full node assets: panorama + this node's transition videos, so any
+        // later navigation is instant
+        await preloadNode(project.nodes[nodeId], project);
         loadedNodes.current.add(nodeId);
 
         // Pause between nodes so the sweep never causes visible lag
@@ -301,7 +299,7 @@ export function useSmartPreloader() {
         }
       }
     },
-    [getNodesByProximity, preloadImage],
+    [getNodesByProximity, preloadNode],
   );
 
   /**

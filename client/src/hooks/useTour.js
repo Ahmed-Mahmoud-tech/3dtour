@@ -9,13 +9,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 // defines the same keys — see vite.config.js.)
 const IS_STATIC = process.env.NEXT_PUBLIC_STATIC_TOUR === "1";
 
-// Pre-play preload: the start node + its 7 nearest nodes by graph distance
-// must be cached before the tour is shown; everything else loads in the
-// background afterwards.
+// Pre-play preload: the start node + its 7 nearest nodes by graph distance —
+// panoramas AND their transition videos — must be cached before the tour is
+// shown; everything else loads in the background afterwards.
 const INITIAL_PRELOAD_NEIGHBORS = 7;
 // A dead connection must not brick the tour behind the loading screen — after
 // this long the tour starts anyway and the preload keeps going underneath.
-const INITIAL_PRELOAD_WATCHDOG_MS = 45_000;
+// (Generous because the initial payload includes transition videos.)
+const INITIAL_PRELOAD_WATCHDOG_MS = 90_000;
 
 /**
  * useTour — Central state machine for the 360 tour viewer.
