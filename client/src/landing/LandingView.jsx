@@ -428,7 +428,7 @@ function Pricing({ t, lang }) {
                 ))}
               </ul>
               <a
-                href={waLink(lang, `${WA_PACKAGE_PREFIX[lang]} "${p.name}"`)}
+                href={waLink(lang, WA_PACKAGE_MSG[lang](p.name))}
                 target="_blank"
                 rel="noreferrer"
                 className={`mt-8 inline-flex items-center justify-center gap-2 rounded-full font-bold px-6 py-3.5 transition-colors ${
@@ -458,9 +458,10 @@ function Pricing({ t, lang }) {
   );
 }
 
-const WA_PACKAGE_PREFIX = {
-  en: 'Hi Gateverse! I want to book the package',
-  ar: 'أهلًا جيت فيرس! عايز أحجز باقة',
+// A message that ends with a question gets answered faster — and feels lighter to send.
+const WA_PACKAGE_MSG = {
+  en: (name) => `Hi Gateverse! I'd like to book the "${name}" package. What's the next available shoot date?`,
+  ar: (name) => `أهلًا جيت ڤيرس! عايز أحجز باقة «${name}». إمتى أقرب معاد تصوير؟`,
 };
 
 function How({ t }) {
@@ -540,7 +541,10 @@ function ContactCta({ t, lang }) {
               {t.cta.email}
             </a>
           </div>
-          <p className="mt-8 text-sm text-gray-500">{CONTACT.location[lang]}</p>
+          <p className="mt-8 text-sm text-gray-500">
+            {CONTACT.location[lang]}
+            {t.cta.reply && <> · {t.cta.reply}</>}
+          </p>
         </Reveal>
       </div>
     </section>

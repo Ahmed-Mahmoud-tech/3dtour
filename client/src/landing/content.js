@@ -70,7 +70,7 @@ export const businessJsonLd = {
 };
 
 export const WA_MESSAGES = {
-  en: 'Hi Gateverse! I want to book a 360° tour shoot for my place.',
+  en: "Hi Gateverse! I'd like to book a 360° tour shoot for my place. What's the next available date?",
   ar: 'أهلًا جيت فيرس! عايز أحجز تصوير جولة ٣٦٠° لمكاني.',
 };
 
@@ -83,18 +83,18 @@ export const PORTFOLIO = [
   {
     id: '6a4128539572ebbddbd6ee39',
     texture: '/panos/p1.webp',
-    title: { en: 'Classic Apartment — Full Walk', ar: 'شقة كلاسيك — جولة كاملة' },
+    title: { en: 'The Classic Apartment', ar: 'شقة كلاسيك — جولة كاملة' },
     tags: {
-      en: ['8 spaces', 'Cinematic transitions', 'Robot-stabilized motion'],
+      en: ['8 spaces', 'Filmed transitions', 'Cinematic motion'],
       ar: ['٨ مساحات', 'انتقالات سينمائية', 'حركة مثبّتة بروبوت'],
     },
   },
   {
     id: '6a2c806b3ecdc5743f2acd98',
     texture: '/panos/p2.webp',
-    title: { en: 'Residence Tour — First Shoot', ar: 'جولة سكنية — أول تصوير' },
+    title: { en: 'The Family Residence', ar: 'جولة سكنية — أول تصوير' },
     tags: {
-      en: ['6 spaces', 'Info hotspots', 'Background audio'],
+      en: ['6 spaces', 'Info hotspots', 'Ambient audio'],
       ar: ['٦ مساحات', 'نقاط معلومات', 'صوت خلفية'],
     },
   },
@@ -107,100 +107,85 @@ export const STRINGS = {
     langHref: '/ar',
     nav: {
       portfolio: 'Portfolio',
-      why: 'Why Gateverse',
+      why: 'Why it works',
       pricing: 'Pricing',
       testimonials: 'Clients',
       contact: 'Contact',
       cta: 'Book on WhatsApp',
     },
     hero: {
-      eyebrow: 'Cinematic 360° virtual tours',
-      title1: "Don't show photos.",
+      eyebrow: 'Cinematic 360° tours — filmed, never stitched',
+      title1: "Don't send photos.",
       title2: 'Let them walk in.',
-      sub: 'Gateverse turns real places into cinematic 360° experiences — filmed walk-throughs, not stitched snapshots. Your clients explore every corner from any phone, before they ever visit.',
+      sub: 'Gateverse films a real walk through your space and turns it into a cinematic 360° tour. One link — and your clients are inside, from any phone, before they ever visit.',
       ctaDemo: 'Walk through a live tour',
-      ctaBook: 'Book on WhatsApp',
-      dragHint: 'Drag the globe',
+      ctaBook: 'Book your shoot on WhatsApp',
+      dragHint: 'Drag to look around',
       stats: [
-        { value: '< 2s', label: 'to first view' },
-        { value: '90+', label: 'FPS motion' },
-        { value: '~6 MB', label: 'per full tour' },
-        { value: '48h', label: 'delivery' },
+        { value: '2 sec', label: 'from tap to inside' },
+        { value: '48 h', label: 'shoot to live link' },
+        { value: 'No app', label: 'opens in any browser' },
+        { value: '1 link', label: 'WhatsApp · ads · QR' },
       ],
     },
     why: {
-      eyebrow: 'Why Gateverse',
-      title: 'Not another dollhouse.',
-      sub: 'Most virtual tours teleport you between frozen photos. Gateverse films the actual walk — and turns it into the strongest sales tool your business owns.',
+      eyebrow: 'Why it works',
+      title: 'A real walk. Not stitched snapshots.',
+      sub: 'Most virtual tours teleport you between frozen photos. Gateverse films the walk itself — every glide between rooms is real footage. Your space, exactly as it feels.',
       cards: [
         {
-          title: 'The deal closer',
-          body: 'A client who has already walked the space arrives convinced. The tour doesn’t just show the place — it closes the sale.',
-        },
-        {
-          title: 'The only ones doing this',
-          body: 'No one else in the market offers filmed cinematic walk-throughs at this quality. Work with us and you own something your competitors simply can’t get.',
-        },
-        {
-          title: 'A class above your competitors',
-          body: 'While they send photos, you send the place itself. That’s not a small edge — in your client’s eyes it’s a different league.',
+          title: 'They arrive convinced',
+          body: 'A client who has already walked the space shows up ready to sign. The tour doesn’t show the place. It sells it.',
         },
         {
           title: 'Serious buyers only',
-          body: 'No more wasted viewings. Whoever calls after walking the tour is genuinely interested — your time goes to buyers, not sightseers.',
+          body: 'No more wasted viewings. Whoever calls after the walk is genuinely interested — your time goes to buyers, not browsers.',
         },
         {
-          title: 'Lives inside your Facebook ads',
-          body: 'Embed the tour in your Facebook ads or your website. People stay longer inside an ad they can explore — longer views, cheaper clicks, more leads.',
+          title: 'Filmed. Never stitched.',
+          body: 'A stabilized camera glides between rooms. Every transition is real footage — not a cut between two photos.',
         },
         {
-          title: 'Stand out on Google Maps',
-          body: 'A full walk-through on your Google Maps profile instead of two photos — you look different from every business around you, and it shows in visits.',
+          title: 'Send what they can’t',
+          body: 'Competitors send an album. You send the place itself. In your client’s eyes, that’s not an edge — it’s a different league.',
         },
         {
           title: 'One link. One QR. Everywhere.',
-          body: 'The whole tour in a single link or QR code — send it on WhatsApp, print it on your storefront or business card. Opens instantly, no app needed.',
+          body: 'WhatsApp it. Print it on your storefront or your card. Opens in a second — no app, no account.',
         },
         {
-          title: 'Filmed motion, not teleporting',
-          body: 'A robot-stabilized camera glides between rooms — every transition is real filmed footage, not a jump cut.',
+          title: 'Stand apart on Google Maps',
+          body: 'A full walk on your profile instead of two photos. Different from everyone around you — and it shows in visits.',
         },
         {
-          title: 'Fast on real networks',
-          body: 'Progressive loading opens a full tour in under 2 seconds on mobile data. No spinners, no patience required.',
+          title: 'Built for your marketing',
+          body: 'Put the walk in your website, link it from your ads, pin it in your bio. People who step inside stay longer — and remember you.',
         },
         {
-          title: 'Your brand front and center',
-          body: 'Your logo, your domain, your identity — the tour carries your name, not a foreign platform’s.',
+          title: 'Your name on the door',
+          body: 'Your logo, your domain, your identity. The tour carries your name — no one else’s.',
         },
         {
-          title: 'Free 3-month hosting',
-          body: 'Launch instantly with 3 months of free hosting included. No extra setup and no hosting costs to get started.',
-        },
-        {
-          title: 'Host on your own server',
-          body: 'Need full control? Deploy the tour on your own VPS, dedicated server or cloud infrastructure — with complete ownership.',
-        },
-        {
-          title: 'Private client notes',
-          body: 'Add private notes anywhere in the dashboard to keep important information and reminders for each client or project.',
+          title: 'Yours, however you want it',
+          body: 'Three months of hosting free with every package — or take the tour to your own server, with full ownership.',
         },
       ],
     },
     portfolio: {
       eyebrow: 'Portfolio',
       title: 'Step inside our work.',
-      sub: 'Each globe is a real filmed space — drag to spin it, then walk in.',
+      sub: 'Every globe below is a real filmed space. Spin it — then walk in.',
       walkIn: 'Walk in',
     },
     testimonials: {
       eyebrow: 'Testimonials',
-      title: 'What clients say.',
+      // Interim title until real quotes exist; switch to 'Results, in their words.' then.
+      title: 'Made for moments like these.',
       // ⚠️ PLACEHOLDER QUOTES — replace with real client words + names before launch.
       items: [
         {
           quote:
-            'We closed a chalet with a buyer in Cairo who never visited. He walked the tour twice on WhatsApp and transferred the deposit.',
+            'We closed a chalet with a buyer in Cairo who never set foot in it. He walked the tour twice on WhatsApp and sent the deposit.',
           name: '[Client name]',
           role: 'Real-estate broker — North Coast',
         },
@@ -220,34 +205,34 @@ export const STRINGS = {
     },
     pricing: {
       eyebrow: 'Packages',
-      title: 'One shoot. Yours forever.',
-      sub: 'No monthly platform subscriptions. You pay for the shoot — the tour is yours.',
-      popular: 'Most popular',
+      title: 'One shoot. Yours to keep.',
+      sub: 'No platform lock-in. The tour is yours — keep it on our hosting, or take it to your own server anytime.',
+      popular: 'Most booked',
       cta: 'Book this package',
       packages: [
         {
           name: 'Essential',
           price: 'EGP 4,900',
-          tagline: 'Photo tour',
+          tagline: 'The photo tour',
           features: [
             'Up to 6 spaces',
             '360° photo panoramas',
             'Navigation hotspots & info signs',
             'Link + QR code',
-            'Delivery in 48 hours',
+            'Delivered in 48 hours',
           ],
           featured: false,
         },
         {
           name: 'Cinematic',
           price: 'EGP 12,900',
-          tagline: 'The signature experience',
+          tagline: 'The full cinematic walk',
           features: [
             'Everything in Essential',
             'Filmed walk-through transitions',
             'Up to 10 spaces',
-            'Background audio',
-            'Your branding on the tour',
+            'Ambient audio',
+            'Your name on the tour',
           ],
           featured: true,
         },
@@ -257,15 +242,16 @@ export const STRINGS = {
           tagline: 'Large & multi-floor spaces',
           features: [
             'Everything in Cinematic',
-            'Up to 20 spaces / multiple floors',
+            'Up to 20 spaces, multiple floors',
             'Google Maps publishing',
-            'Embed setup: your website + Facebook ads',
+            'Embed setup for your site & ads',
             'Priority 24-hour delivery',
           ],
           featured: false,
         },
       ],
-      hostingNote: 'Hosting & updates: EGP 399/month — first 3 months free with any package.',
+      hostingNote:
+        'Hosting & updates: free for 3 months, then EGP 399/month — or self-host on your own server, free forever.',
       customNote: 'Compound, hotel or school? Message us on WhatsApp for a custom quote.',
     },
     how: {
@@ -280,45 +266,46 @@ export const STRINGS = {
         {
           n: '02',
           title: 'We build',
-          body: 'Navigation hotspots, info signs, background audio and your branding — assembled in our own studio platform.',
+          body: 'Hotspots, info signs, ambient audio, your name on the door. You review the walk — we refine until it’s right.',
         },
         {
           n: '03',
-          title: 'You share',
-          body: 'One link that works everywhere: WhatsApp, Instagram, QR on your window, or embedded in your website and ads.',
+          title: 'You send it',
+          body: 'One link that works everywhere: WhatsApp, Instagram, a QR on your window, or inside your website and ads.',
         },
       ],
     },
     sectors: {
       eyebrow: 'Who it’s for',
-      title: 'Spaces that sell themselves.',
+      title: 'Places worth walking through.',
       items: [
         {
           title: 'Real estate & coastal compounds',
-          body: 'Let buyers in Cairo walk a Sahel chalet tonight — and arrive ready to sign.',
+          body: 'Let a buyer in Cairo walk a Sahel chalet tonight — and arrive ready to sign.',
         },
         {
           title: 'Wedding & event venues',
-          body: 'Brides tour your hall from Instagram before they ever call.',
+          body: 'Brides walk your hall from Instagram before the first call.',
         },
         {
           title: 'Hotels, cafés & restaurants',
-          body: 'Turn “what does it look like inside?” into a booking.',
+          body: 'Turn “what’s it like inside?” into a booking.',
         },
         {
           title: 'Schools, gyms & clinics',
-          body: 'Parents and members decide with their own eyes, from home.',
+          body: 'Parents and members decide with their own eyes — from home.',
         },
       ],
     },
     cta: {
       title: 'Your space, open 24/7.',
-      sub: 'Book a shoot in Alexandria — filmed this week, live in 48 hours.',
+      sub: 'Alexandria and the North Coast — filmed this week, live in 48 hours. Somewhere else in Egypt? Ask.',
       whatsapp: 'Book on WhatsApp',
       email: 'Or email us',
+      reply: 'We reply within the hour',
     },
     footer: {
-      tagline: 'Cinematic 360° virtual tours — filmed, not stitched.',
+      tagline: 'Filmed. Never stitched.',
       rights: '© 2026 Gateverse. All rights reserved.',
     },
   },

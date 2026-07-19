@@ -4,7 +4,7 @@ import { businessJsonLd } from '../src/landing/content.js';
 export const metadata = {
   title: 'Gateverse — Cinematic 360° Virtual Tours in Egypt',
   description:
-    "Don't show photos — let them walk in. Filmed 360° walk-through tours for real estate, wedding venues, hotels and cafés in Alexandria, Egypt. Live in 48 hours, shared with one link or QR code.",
+    "Don't send photos — let them walk in. Cinematic 360° tours filmed as real walk-throughs, never stitched, for real estate, wedding venues, hotels and cafés in Alexandria and the North Coast. Live in 48 hours — one link, no app.",
   keywords: [
     'virtual tour Egypt',
     '360 tour Alexandria',
@@ -19,7 +19,7 @@ export const metadata = {
   openGraph: {
     title: 'Gateverse — Cinematic 360° Virtual Tours',
     description:
-      "Don't show photos. Let them walk in. Filmed 360° walk-throughs for real estate, venues and hotels.",
+      "Don't send photos. Let them walk in. Filmed 360° walk-throughs for real estate, venues and hotels — live in 48 hours.",
     url: '/',
     siteName: 'Gateverse',
     locale: 'en_US',
