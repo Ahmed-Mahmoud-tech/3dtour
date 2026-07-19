@@ -165,7 +165,7 @@ export default function ProjectsPage() {
       // Upload the client logo first (if provided), then create the project
       let nadirLogoUrl = "";
       if (logoFile) {
-        const { url } = await mediaApi.uploadImage(logoFile);
+        const { url } = await mediaApi.uploadLogo(logoFile);
         nadirLogoUrl = url;
       }
       await projectApi.create({

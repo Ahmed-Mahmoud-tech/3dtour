@@ -74,6 +74,13 @@ export const mediaApi = {
     fd.append("image", file);
     return axios.post(`${BASE}/media/image`, fd).then((r) => r.data);
   },
+  // Nadir logo — the server caps it at 200px wide (it only renders on the
+  // small floor disc), unlike popup cover images.
+  uploadLogo: (file) => {
+    const fd = new FormData();
+    fd.append("image", file);
+    return axios.post(`${BASE}/media/image?kind=logo`, fd).then((r) => r.data);
+  },
   uploadVideo: (projectId, transitionId, file) => {
     const fd = new FormData();
     fd.append("video", file);

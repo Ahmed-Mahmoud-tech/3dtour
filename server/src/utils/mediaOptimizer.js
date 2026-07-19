@@ -37,10 +37,14 @@ const VIDEO_CRF = 26;
 // optimized files just get their audio track remuxed away.
 const VIDEO_BITRATE_THRESHOLD = 5_000_000;
 
-// Popup cover images / logos: WebP, capped — they render in small overlays,
-// nothing above this width is ever visible.
+// Popup cover images: WebP, capped — they render in small overlays, nothing
+// above this width is ever visible.
 const IMAGE_MAX_WIDTH = 2048;
 const IMAGE_QUALITY = 80;
+// Nadir logo: renders on the small floor disc hiding the tripod — 200px wide
+// covers it. Callers pass this as optimizeImage's maxWidth (see
+// uploadImageHandler's ?kind=logo branch).
+export const LOGO_MAX_WIDTH = 200;
 
 // Background audio: anything heavier than this (WAV, 320k MP3…) is
 // re-encoded to AAC 128k (.m4a) — transparent quality for ambient music at a
@@ -190,7 +194,8 @@ export async function optimizeVideoInPlace(inputPath, options = {}) {
 }
 
 /**
- * Convert an uploaded popup/logo image to WebP (max 2048 wide), replacing the
+ * Convert an uploaded popup/logo image to WebP (max 2048 wide by default;
+ * override with options.maxWidth — logos pass LOGO_MAX_WIDTH), replacing the
  * original. Returns the new file path; on failure, the original is kept and
  * returned unchanged.
  */
@@ -198,11 +203,15 @@ export async function optimizeImage(inputPath, options = {}) {
   const dir = path.dirname(inputPath);
   const base = path.basename(inputPath, path.extname(inputPath));
   const outPath = path.join(dir, `${base}.webp`);
+  const maxWidth = options.maxWidth || IMAGE_MAX_WIDTH;
+  // 'photo' suits popup covers (photographic content); logo uploads pass
+  // 'icon' — libwebp's tuning for small graphics with hard edges.
+  const preset = options.preset || 'photo';
 
   try {
     await sharp(inputPath, { limitInputPixels: false })
-      .resize({ width: IMAGE_MAX_WIDTH, withoutEnlargement: true })
-      .webp({ quality: IMAGE_QUALITY, effort: 4 })
+      .resize({ width: maxWidth, withoutEnlargement: true })
+      .webp({ quality: IMAGE_QUALITY, effort: 6, preset })
       .toFile(outPath + '.tmp');
     fs.renameSync(outPath + '.tmp', outPath);
     if (inputPath !== outPath) {

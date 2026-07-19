@@ -104,7 +104,7 @@ export default function ProjectEditPage() {
     if (!logoFile) return;
     setLogoUploading(true);
     try {
-      const { url } = await mediaApi.uploadImage(logoFile);
+      const { url } = await mediaApi.uploadLogo(logoFile);
       await projectApi.update(projectId, { info: { nadirLogoUrl: url } });
       await fetchProject();
       setLogoFile(null);

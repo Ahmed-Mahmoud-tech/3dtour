@@ -5,6 +5,7 @@ import {
   optimizeVideoInPlace,
   optimizeImage,
   optimizeAudio,
+  LOGO_MAX_WIDTH,
 } from '../utils/mediaOptimizer.js';
 import { UPLOADS_ROOT } from '../utils/uploadPaths.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -50,13 +51,19 @@ export const uploadAudioHandler = asyncHandler(async (req, res) => {
   res.status(201).json({ url });
 });
 
-// ─── Upload Image (popup cover) ───────────────────────────────────────────────
+// ─── Upload Image (popup cover / nadir logo) ──────────────────────────────────
 
-// POST /api/media/image
+// POST /api/media/image[?kind=logo]
 export const uploadImageHandler = asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-  // Convert to WebP, cap at 2048 wide — popup covers/logos never need more
-  const finalPath = await optimizeImage(req.file.path);
+  // Convert to WebP. Popup covers cap at 2048 wide (they render in overlays);
+  // logos render on the small nadir floor disc, so ?kind=logo caps at 200 wide
+  // with icon-tuned encoding.
+  const isLogo = req.query.kind === 'logo';
+  const finalPath = await optimizeImage(
+    req.file.path,
+    isLogo ? { maxWidth: LOGO_MAX_WIDTH, preset: 'icon' } : {},
+  );
   const url = toPublicUrl(finalPath);
   await recordUpload(url, req.user._id);
   res.status(201).json({ url });
