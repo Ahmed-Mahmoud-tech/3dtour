@@ -1,24 +1,53 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import { pickPanoramaUrl } from "../utils/textureTier.js";
+
+// ─── Video preload tuning ─────────────────────────────────────────────────────
+// Abort an attempt only when the connection STALLS (no bytes for this long) —
+// a flat total timeout killed every clip that simply took longer than it to
+// download, which is routine on mobile networks and was the main source of
+// "requested but never loaded" videos.
+const VIDEO_STALL_MS = 20_000;
+// Absolute safety cap per attempt so a byte-per-second trickle can't pin a
+// preload slot forever.
+const VIDEO_TOTAL_MS = 180_000;
+// Network attempts per preloadVideo call (with backoff between them).
+const VIDEO_ATTEMPTS = 2;
+// After this many FAILED preloadVideo calls for one URL, stop trying — the
+// <video> element will stream it on demand if the user actually navigates.
+const VIDEO_MAX_FAILED_CALLS = 3;
 
 /**
  * useSmartPreloader — Intelligent asset preloading with proximity-based prioritization.
  *
  * Strategy:
- * 1. Blocking initial preload BEFORE the tour plays: the start node's panorama
- *    plus its nearest neighbors by graph distance (preloadInitialNodes, with a
- *    progress callback driving the pre-play loading screen)
+ * 1. Blocking initial preload BEFORE the tour plays: the start node plus its
+ *    nearest neighbors by graph distance, full assets each — panorama AND
+ *    transition videos (preloadInitialNodes, with a progress callback driving
+ *    the pre-play loading screen)
  * 2. On-demand loading when user navigates (via preloadNextAssets)
  * 3. Silent background loading of ALL remaining nodes by proximity after the
- *    user settles (preloadRemaining)
- * 4. Cache everything to avoid re-downloading
+ *    user settles (preloadRemaining); nodes whose assets failed stay
+ *    unmarked so a later sweep retries them
+ * 4. Cache everything to avoid re-downloading; concurrent requests for the
+ *    same URL share one in-flight fetch
  * 5. Cancel and re-prioritize when user navigates
  */
 export function useSmartPreloader() {
   const imageCache = useRef(new Set());
   const videoCache = useRef(new Set());
   const loadedNodes = useRef(new Set());
-  const loadingCancelledRef = useRef(false); // Flag to cancel background loading
+  // In-flight dedupe: url -> Promise<boolean>. Without this, the background
+  // sweep and a click/hover preload could download the same panorama or clip
+  // twice in parallel, starving each other of bandwidth.
+  const imageInflight = useRef(new Map());
+  const videoInflight = useRef(new Map());
+  // url -> count of failed preloadVideo calls (drives the give-up budget)
+  const videoFailedCalls = useRef(new Map());
+  // Background-sweep generation token. A plain boolean flag had a race: a new
+  // sweep reset it while an old sweep was still awaiting a download, so the
+  // old one resumed and BOTH swept in parallel. Bumping a generation makes
+  // every older sweep see itself as stale at its next check.
+  const sweepGenRef = useRef(0);
 
   /**
    * Calculate graph distance between nodes using BFS.
@@ -81,16 +110,21 @@ export function useSmartPreloader() {
   );
 
   /**
-   * Preload a single image URL with proper decoding.
+   * Preload a single image URL with proper decoding. Concurrent calls for the
+   * same URL share one request.
    * @param {string} url
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} true when the bytes are cached (even if the
+   *   decode warm-up failed — the viewer's texture loader decodes again
+   *   anyway); false when the network load failed and a retry may succeed
    */
   const preloadImage = useCallback((url) => {
     if (!url || imageCache.current.has(url)) {
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
+    const inflight = imageInflight.current.get(url);
+    if (inflight) return inflight;
 
-    return new Promise((resolve) => {
+    const p = new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
 
@@ -99,122 +133,174 @@ export function useSmartPreloader() {
           if (img.decode) {
             await img.decode();
           }
-          imageCache.current.add(url);
-          resolve();
         } catch (err) {
           console.warn("⚠️ Image decode failed:", url.split("/").pop());
-          resolve();
         }
+        imageCache.current.add(url);
+        resolve(true);
       };
 
       img.onerror = () => {
         console.warn("⚠️ Image preload failed:", url.split("/").pop());
-        resolve();
+        resolve(false);
       };
 
       img.src = url;
-    });
+    }).finally(() => imageInflight.current.delete(url));
+
+    imageInflight.current.set(url, p);
+    return p;
+  }, []);
+
+  /**
+   * One network attempt: fetch the clip and drain it into the HTTP cache.
+   * Aborts on stall (no bytes for VIDEO_STALL_MS) or the absolute cap.
+   * The body is drained chunk-by-chunk so the full file lands in the HTTP
+   * cache WITHOUT ever holding the whole clip in JS memory (res.blob()
+   * spiked the heap by the clip's full size — fatal on low-RAM phones
+   * when several chain segments preload around a transition).
+   * @param {string} url
+   */
+  const fetchVideoOnce = useCallback(async (url) => {
+    const controller = new AbortController();
+    let stallTimer;
+    const armStall = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => controller.abort(), VIDEO_STALL_MS);
+    };
+    const totalTimer = setTimeout(() => controller.abort(), VIDEO_TOTAL_MS);
+
+    try {
+      armStall();
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body?.getReader?.();
+      if (reader) {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          armStall();
+          const { done } = await reader.read();
+          if (done) break;
+        }
+      } else {
+        await res.blob(); // ancient-browser fallback
+      }
+    } finally {
+      clearTimeout(stallTimer);
+      clearTimeout(totalTimer);
+    }
   }, []);
 
   /**
    * Preload a video URL by fetching it fully into the browser's HTTP cache.
-   * (The old approach kept a hidden <video> element per clip alive forever,
-   * pinning every preloaded video's buffer in memory. A plain fetch warms the
-   * disk cache — the server marks uploads immutable — and holds nothing.)
+   * (A hidden <video> element per clip would pin every preloaded buffer in
+   * memory forever; a drained fetch warms the disk cache and holds nothing.)
+   * Concurrent calls for the same URL share one download; a failed call is
+   * retried with backoff, and a URL that keeps failing across
+   * VIDEO_MAX_FAILED_CALLS calls is given up on so sweeps never hammer a
+   * dead file forever.
    * @param {string} url
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} true when no further preload work is needed
+   *   (cached, or permanently given up); false when this call failed but a
+   *   later call may succeed
    */
-  const preloadVideo = useCallback((url) => {
-    if (!url || videoCache.current.has(url)) {
-      return Promise.resolve();
-    }
+  const preloadVideo = useCallback(
+    (url) => {
+      if (!url || videoCache.current.has(url)) {
+        return Promise.resolve(true);
+      }
+      const inflight = videoInflight.current.get(url);
+      if (inflight) return inflight;
+      if ((videoFailedCalls.current.get(url) || 0) >= VIDEO_MAX_FAILED_CALLS) {
+        return Promise.resolve(true); // given up — let <video> stream it live
+      }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-
-    return fetch(url, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Drain the body chunk-by-chunk so the full file lands in the HTTP
-        // cache WITHOUT ever holding the whole clip in JS memory (res.blob()
-        // spiked the heap by the clip's full size — fatal on low-RAM phones
-        // when several chain segments preload around a transition).
-        const reader = res.body?.getReader?.();
-        if (reader) {
-          // eslint-disable-next-line no-constant-condition
-          while (true) {
-            const { done } = await reader.read();
-            if (done) break;
+      const run = async () => {
+        for (let attempt = 1; attempt <= VIDEO_ATTEMPTS; attempt++) {
+          try {
+            await fetchVideoOnce(url);
+            videoCache.current.add(url);
+            videoFailedCalls.current.delete(url);
+            return true;
+          } catch (err) {
+            if (attempt < VIDEO_ATTEMPTS) {
+              await new Promise((r) => setTimeout(r, attempt * 2000));
+            }
           }
-        } else {
-          await res.blob(); // ancient-browser fallback
         }
-      })
-      .then(() => {
-        videoCache.current.add(url);
-      })
-      .catch(() => {
-        console.warn("⚠️ Video preload failed:", url.split("/").pop());
-      })
-      .finally(() => clearTimeout(timer));
+        const fails = (videoFailedCalls.current.get(url) || 0) + 1;
+        videoFailedCalls.current.set(url, fails);
+        console.warn(
+          `⚠️ Video preload failed (call ${fails}/${VIDEO_MAX_FAILED_CALLS}):`,
+          url.split("/").pop(),
+        );
+        return false;
+      };
+
+      const p = run().finally(() => videoInflight.current.delete(url));
+      videoInflight.current.set(url, p);
+      return p;
+    },
+    [fetchVideoOnce],
+  );
+
+  /**
+   * Every transition-video URL reachable FROM a node: direct hotspot clips,
+   * multi-video chain segments (hotspot.transitionVideos — what the viewer
+   * actually plays for chains; these were previously never preloaded), and
+   * shared project.transitions entries. De-duplicated, order preserved.
+   * @param {Object} node
+   * @param {Object} project
+   * @returns {string[]}
+   */
+  const collectNodeVideoUrls = useCallback((node, project) => {
+    const urls = new Set();
+    node?.navigationHotspots?.forEach((hotspot) => {
+      if (hotspot.transitionVideoUrl) urls.add(hotspot.transitionVideoUrl);
+      if (Array.isArray(hotspot.transitionVideos)) {
+        hotspot.transitionVideos.forEach((v) => {
+          if (v?.videoUrl) urls.add(v.videoUrl);
+        });
+      }
+      const shared = hotspot.transitionId
+        ? project?.transitions?.[hotspot.transitionId]
+        : null;
+      if (shared?.videoUrl) urls.add(shared.videoUrl);
+    });
+    return [...urls];
   }, []);
 
   /**
-   * Preload all assets for a single node (panorama + transition videos).
+   * Preload all assets for a single node: panorama first (it's what the user
+   * sees on arrival), then its transition videos ONE AT A TIME — parallel
+   * clip fetches starve each other of bandwidth and trip the stall watchdog
+   * on slow links, which is exactly how videos ended up requested-but-never-
+   * cached.
    * @param {Object} node - Node to preload
    * @param {Object} project - Full project object (to access transitions)
-   * @param {boolean} videosOnly - If true, only load videos (panorama already loaded)
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} true when every asset is cached (or given up
+   *   on) — only then may the node be marked fully loaded
    */
   const preloadNode = useCallback(
-    async (node, project, videosOnly = false) => {
-      if (!node) return;
+    async (node, project) => {
+      if (!node) return true;
 
-      const tasks = [];
+      let ok = true;
 
-      // Preload panorama (unless videosOnly mode) — the same device tier the
-      // viewer will render, so the cache warms the right file
+      // Panorama — the same device tier the viewer will render, so the cache
+      // warms the right file
       const panoUrl = pickPanoramaUrl(node);
-      if (!videosOnly && panoUrl && !imageCache.current.has(panoUrl)) {
-        tasks.push(preloadImage(panoUrl));
+      if (panoUrl) {
+        ok = (await preloadImage(panoUrl)) && ok;
       }
 
-      // Preload transition videos from this node's hotspots
-      if (node.navigationHotspots) {
-        node.navigationHotspots.forEach((hotspot) => {
-          // Direct video URLs on hotspot
-          if (
-            hotspot.transitionVideoUrl &&
-            !videoCache.current.has(hotspot.transitionVideoUrl)
-          ) {
-            tasks.push(preloadVideo(hotspot.transitionVideoUrl));
-          }
-
-          // Also check project.transitions[transitionId] if available
-          if (
-            hotspot.transitionId &&
-            project.transitions?.[hotspot.transitionId]
-          ) {
-            const transition = project.transitions[hotspot.transitionId];
-            if (
-              transition.videoUrl &&
-              !videoCache.current.has(transition.videoUrl)
-            ) {
-              tasks.push(preloadVideo(transition.videoUrl));
-            }
-          }
-        });
+      for (const url of collectNodeVideoUrls(node, project)) {
+        ok = (await preloadVideo(url)) && ok;
       }
 
-      if (tasks.length > 0) {
-        await Promise.all(tasks);
-      }
-
-      if (!videosOnly) {
-        loadedNodes.current.add(node.id);
-      }
+      return ok;
     },
-    [preloadImage, preloadVideo],
+    [preloadImage, preloadVideo, collectNodeVideoUrls],
   );
 
   /**
@@ -225,7 +311,9 @@ export function useSmartPreloader() {
    * spikes memory on low-RAM phones and starves the first — most urgent —
    * download of bandwidth) and progress is reported after each node so the
    * loading screen can show a real bar.
-   * Every underlying loader resolves even on failure, so this always settles.
+   * Every underlying loader resolves even on failure, so this always settles;
+   * a node with failed assets still counts toward progress but stays
+   * unmarked, so the background sweep retries it later.
    * @param {Object} project - Full project object
    * @param {string} startNodeId - Node the tour opens on
    * @param {number} neighborCount - How many nearest nodes besides the start
@@ -245,9 +333,8 @@ export function useSmartPreloader() {
       onProgress?.(loaded, total);
 
       for (const { nodeId } of targets) {
-        // Panorama + this node's outgoing transition videos
-        await preloadNode(project.nodes[nodeId], project);
-        loadedNodes.current.add(nodeId);
+        const ok = await preloadNode(project.nodes[nodeId], project);
+        if (ok) loadedNodes.current.add(nodeId);
         loaded += 1;
         onProgress?.(loaded, total);
       }
@@ -264,12 +351,12 @@ export function useSmartPreloader() {
    */
   const preloadRemaining = useCallback(
     async (project, activeNodeId) => {
-      // Reset cancellation flag
-      loadingCancelledRef.current = false;
+      const gen = ++sweepGenRef.current;
 
       const sortedNodes = getNodesByProximity(project.nodes, activeNodeId);
 
-      // Everything not already cached, nearest first
+      // Everything not already fully cached, nearest first (includes nodes
+      // whose assets failed in an earlier pass — they get retried here)
       const remaining = sortedNodes.filter(
         ({ nodeId }) => !loadedNodes.current.has(nodeId),
       );
@@ -281,17 +368,18 @@ export function useSmartPreloader() {
       // Load ONE node at a time with delays between them (gentle on the
       // network + main-thread decode; the whole tour eventually gets cached)
       for (let i = 0; i < remaining.length; i++) {
-        // Check if loading was cancelled
-        if (loadingCancelledRef.current) {
+        // Superseded by a newer sweep or cancelled — stop immediately
+        if (sweepGenRef.current !== gen) {
           return;
         }
 
         const { nodeId } = remaining[i];
 
         // Full node assets: panorama + this node's transition videos, so any
-        // later navigation is instant
-        await preloadNode(project.nodes[nodeId], project);
-        loadedNodes.current.add(nodeId);
+        // later navigation is instant. Only a fully-cached node is marked
+        // loaded — partial failures stay eligible for the next sweep.
+        const ok = await preloadNode(project.nodes[nodeId], project);
+        if (ok) loadedNodes.current.add(nodeId);
 
         // Pause between nodes so the sweep never causes visible lag
         if (i < remaining.length - 1) {
@@ -307,11 +395,14 @@ export function useSmartPreloader() {
    * Call this when the active node changes to re-prioritize.
    */
   const cancelBackgroundLoading = useCallback(() => {
-    loadingCancelledRef.current = true;
+    sweepGenRef.current++;
   }, []);
 
   /**
-   * Preload assets for a specific next node (used during navigation hover).
+   * Preload assets for a specific next node (used during navigation hover /
+   * click). Panorama and clip load in PARALLEL here — this is the urgent
+   * path, and it's at most two files. The in-flight maps make this share
+   * (not duplicate) any download the background sweep already started.
    * @param {Object} targetNode
    * @param {Object} transitionData - { videoUrl? }
    * @returns {Promise<void>}
@@ -340,6 +431,7 @@ export function useSmartPreloader() {
     imageCache.current.clear();
     videoCache.current.clear();
     loadedNodes.current.clear();
+    videoFailedCalls.current.clear();
   }, []);
 
   return {
