@@ -93,6 +93,10 @@ const NodeSchema = new mongoose.Schema(
     // Low-res preview generated at upload; the viewer shows it instantly and
     // swaps in the full panorama once decoded (blur-up)
     panoramaPreviewUrl: { type: String, default: "" },
+    // 4096-wide tier generated at upload for GPUs whose texture cap is below
+    // the full panorama width. "" = source was small enough that the full
+    // file serves every device (viewer falls back to panoramaUrl).
+    panoramaMobileUrl: { type: String, default: "" },
     initialYawOffset: { type: Number, default: 0 },
     navigationHotspots: { type: [NavigationHotspotSchema], default: [] },
     infoSigns: { type: [InfoSignSchema], default: [] },

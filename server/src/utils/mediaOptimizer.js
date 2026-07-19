@@ -7,10 +7,17 @@ if (process.env.FFMPEG_PATH) ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
 if (process.env.FFPROBE_PATH) ffmpeg.setFfprobePath(process.env.FFPROBE_PATH);
 
 // Panorama output settings. 7680 keeps full source detail on desktop GPUs
-// (most 2018+ mobile GPUs also accept 8192 textures). The preview is small
-// enough (~100 KB) to decode near-instantly for the blur-up first paint.
+// (most 2018+ mobile GPUs also accept 8192 textures). The mobile tier serves
+// phones whose GPU texture cap is 4096: without it three.js CPU-downscales the
+// 7680 file on those devices (slow, memory spike, wasted bandwidth). The
+// preview is small enough (~100 KB) to decode near-instantly for the blur-up
+// first paint. The 7680/4096 tier split is mirrored client-side in
+// client/src/utils/textureTier.js — keep the widths in sync.
 const PANORAMA_MAX_WIDTH = 7680;
 const PANORAMA_QUALITY = 82;
+// Exported for scripts/backfill-mobile-panoramas.mjs
+export const PANORAMA_MOBILE_WIDTH = 4096;
+export const PANORAMA_MOBILE_QUALITY = 80;
 const PREVIEW_WIDTH = 1536;
 const PREVIEW_QUALITY = 60;
 
@@ -41,19 +48,24 @@ function backupFile(filePath, backupDir) {
 }
 
 /**
- * Convert an uploaded panorama to WebP and generate a low-res preview.
+ * Convert an uploaded panorama to WebP and generate a low-res preview plus,
+ * when the source is wide enough to warrant it, a 4096-wide mobile tier.
  * Replaces the original file (deleted, or moved to options.backupDir if
- * given, unless it was already the .webp target). Returns { filePath, previewPath }.
+ * given, unless it was already the .webp target).
+ * Returns { filePath, previewPath, mobilePath } — mobilePath is null when the
+ * source is already ≤ the mobile width (the full file serves everyone).
  */
 export async function optimizePanorama(inputPath, options = {}) {
   const dir = path.dirname(inputPath);
   const base = path.basename(inputPath, path.extname(inputPath));
   const fullPath = path.join(dir, `${base}.webp`);
   const previewPath = path.join(dir, `${base}_preview.webp`);
+  const mobilePath = path.join(dir, `${base}_mobile.webp`);
 
   const image = sharp(inputPath, { limitInputPixels: false });
   const meta = await image.metadata();
   const targetWidth = Math.min(meta.width || PANORAMA_MAX_WIDTH, PANORAMA_MAX_WIDTH);
+  const wantsMobile = targetWidth > PANORAMA_MOBILE_WIDTH;
 
   await image
     .clone()
@@ -67,14 +79,22 @@ export async function optimizePanorama(inputPath, options = {}) {
     .webp({ quality: PREVIEW_QUALITY, effort: 4 })
     .toFile(previewPath);
 
-  // Atomic-ish swap: only remove the source after both outputs succeeded
+  if (wantsMobile) {
+    await image
+      .clone()
+      .resize({ width: PANORAMA_MOBILE_WIDTH, withoutEnlargement: true })
+      .webp({ quality: PANORAMA_MOBILE_QUALITY, effort: 4 })
+      .toFile(mobilePath);
+  }
+
+  // Atomic-ish swap: only remove the source after all outputs succeeded
   fs.renameSync(fullPath + '.tmp', fullPath);
   if (inputPath !== fullPath) {
     if (options.backupDir) backupFile(inputPath, options.backupDir);
     else fs.unlinkSync(inputPath);
   }
 
-  return { filePath: fullPath, previewPath };
+  return { filePath: fullPath, previewPath, mobilePath: wantsMobile ? mobilePath : null };
 }
 
 /** Probe a media file's stream info; returns { width, bitrate, sizeBytes, hasAudio } */
@@ -103,10 +123,17 @@ export function probeVideo(inputPath) {
  * valid): H.264 CRF 26, faststart for progressive playback, audio stripped,
  * downscaled to max 3840 wide. Files already at a sane bitrate skip the
  * re-encode but still get their audio track removed (lossless remux).
+ *
+ * The original is REPLACED (not archived) unless options.backupDir is given —
+ * so before overwriting, the transcode is sanity-checked (nonzero size, video
+ * stream present, duration within 5% of the source). A transcode that fails
+ * the check is discarded and the original kept: with no archive there is no
+ * second chance at the master.
  * Returns true if the file was rewritten.
  */
 export async function optimizeVideoInPlace(inputPath, options = {}) {
-  const { bitrate, width, hasAudio } = await probeVideo(inputPath);
+  const source = await probeVideo(inputPath);
+  const { bitrate, width, hasAudio } = source;
   const alreadyLean =
     bitrate > 0 && bitrate <= VIDEO_BITRATE_THRESHOLD && width <= VIDEO_MAX_WIDTH;
   if (alreadyLean && !hasAudio) return false;
@@ -133,6 +160,22 @@ export async function optimizeVideoInPlace(inputPath, options = {}) {
       .on('error', reject)
       .run();
   });
+
+  // Verify the transcode before it replaces the only copy of the clip
+  try {
+    const out = await probeVideo(tmpPath);
+    const durationDrift = Math.abs(out.duration - source.duration);
+    const tolerance = Math.max(0.5, source.duration * 0.05);
+    if (out.sizeBytes <= 0 || out.width <= 0 || (source.duration > 0 && durationDrift > tolerance)) {
+      throw new Error(
+        `output failed sanity check (size=${out.sizeBytes}, width=${out.width}, ` +
+        `duration=${out.duration}s vs source ${source.duration}s)`
+      );
+    }
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch { /* already gone */ }
+    throw new Error(`Transcode rejected, original kept: ${err.message}`);
+  }
 
   if (options.backupDir) backupFile(inputPath, options.backupDir);
   fs.renameSync(tmpPath, inputPath);

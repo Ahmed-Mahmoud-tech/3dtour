@@ -4,6 +4,7 @@ import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import NavigationHotspot from "./NavigationHotspot.jsx";
 import InfoSign from "./InfoSign.jsx";
+import { pickPanoramaUrl } from "../../utils/textureTier.js";
 
 const SPHERE_RADIUS = 50;
 
@@ -760,7 +761,7 @@ function Scene({
       {previousNode && (
         <Suspense fallback={null} key={`prev-${previousNode.id}`}>
           <PanoramaSphere
-            panoramaUrl={previousNode.panoramaUrl}
+            panoramaUrl={pickPanoramaUrl(previousNode)}
             previewUrl={previousNode.panoramaPreviewUrl}
             opacity={1}
             initialOpacity={1}
@@ -777,7 +778,7 @@ function Scene({
       {transitionBackdrops?.map(({ node: backdropNode, radiusOffset }) => (
         <Suspense fallback={null} key={`backdrop-${backdropNode.id}`}>
           <PanoramaSphere
-            panoramaUrl={backdropNode.panoramaUrl}
+            panoramaUrl={pickPanoramaUrl(backdropNode)}
             previewUrl={backdropNode.panoramaPreviewUrl}
             opacity={1}
             yawOffset={backdropNode.initialYawOffset || 0}
@@ -790,7 +791,7 @@ function Scene({
           decorative); retryNonce re-runs its texture load on demand. */}
       <PanoramaSphere
         key={node.id}
-        panoramaUrl={node.panoramaUrl}
+        panoramaUrl={pickPanoramaUrl(node)}
         previewUrl={node.panoramaPreviewUrl}
         opacity={panoramaOpacity}
         onFadeInComplete={onPanoramaFadeInComplete}
@@ -885,6 +886,7 @@ export default function SphereViewer({
           id: displayedNode.id,
           panoramaUrl: displayedNode.panoramaUrl,
           panoramaPreviewUrl: displayedNode.panoramaPreviewUrl,
+          panoramaMobileUrl: displayedNode.panoramaMobileUrl,
           initialYawOffset: displayedNode.initialYawOffset,
         });
         setPanoramaOpacity(1);

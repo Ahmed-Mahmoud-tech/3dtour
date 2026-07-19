@@ -227,8 +227,12 @@ export const deleteProject = asyncHandler(async (req, res) => {
     if (!node) return;
     if (node.panoramaUrl) urls.add(node.panoramaUrl);
     if (node.panoramaPreviewUrl) urls.add(node.panoramaPreviewUrl);
+    if (node.panoramaMobileUrl) urls.add(node.panoramaMobileUrl);
     (node.navigationHotspots || []).forEach((hs) => {
       if (hs.transitionVideoUrl) urls.add(hs.transitionVideoUrl);
+      (hs.transitionVideos || []).forEach((v) => {
+        if (v?.videoUrl) urls.add(v.videoUrl);
+      });
     });
     (node.infoSigns || []).forEach((s) => {
       if (s?.popupContent?.coverImage) urls.add(s.popupContent.coverImage);
@@ -262,7 +266,7 @@ export const addNode = asyncHandler(async (req, res) => {
   });
   if (!project) return res.status(404).json({ message: "Project not found" });
 
-  const { displayName, panoramaUrl, panoramaPreviewUrl, initialYawOffset } = req.body;
+  const { displayName, panoramaUrl, panoramaPreviewUrl, panoramaMobileUrl, initialYawOffset } = req.body;
   if (!displayName || !panoramaUrl)
     return res
       .status(400)
@@ -276,6 +280,7 @@ export const addNode = asyncHandler(async (req, res) => {
     displayName,
     panoramaUrl,
     panoramaPreviewUrl: panoramaPreviewUrl || "",
+    panoramaMobileUrl: panoramaMobileUrl || "",
     initialYawOffset: initialYawOffset || 0,
   };
   project.nodes.set(id, node);
@@ -315,10 +320,11 @@ export const updateNode = asyncHandler(async (req, res) => {
       parseFloat(updateData.initialYawOffset) || 0;
   }
 
-  // 2. Remove any replaced uploads (panorama + its preview)
+  // 2. Remove any replaced uploads (panorama + its preview + mobile tier)
   if (updateData.panoramaUrl && existing.panoramaUrl && updateData.panoramaUrl !== existing.panoramaUrl) {
     deleteUploadByUrl(existing.panoramaUrl);
     if (existing.panoramaPreviewUrl) deleteUploadByUrl(existing.panoramaPreviewUrl);
+    if (existing.panoramaMobileUrl) deleteUploadByUrl(existing.panoramaMobileUrl);
   }
 
   // 3. Merge the plain 'existing' object with the new 'updateData'
@@ -349,6 +355,7 @@ export const deleteNode = asyncHandler(async (req, res) => {
   if (node) {
     if (node.panoramaUrl) deleteUploadByUrl(node.panoramaUrl);
     if (node.panoramaPreviewUrl) deleteUploadByUrl(node.panoramaPreviewUrl);
+    if (node.panoramaMobileUrl) deleteUploadByUrl(node.panoramaMobileUrl);
     (node.navigationHotspots || []).forEach((hs) => {
       if (hs.transitionVideoUrl) deleteUploadByUrl(hs.transitionVideoUrl);
 

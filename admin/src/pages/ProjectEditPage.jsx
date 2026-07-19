@@ -119,11 +119,12 @@ export default function ProjectEditPage() {
     if (!newNode.displayName || !panoramaFile) return;
     setNodeUploading(true);
     try {
-      const { url, previewUrl } = await mediaApi.uploadPanorama(panoramaFile);
+      const { url, previewUrl, mobileUrl } = await mediaApi.uploadPanorama(panoramaFile);
       await nodeApi.add(projectId, {
         displayName: newNode.displayName,
         panoramaUrl: url,
         panoramaPreviewUrl: previewUrl || "",
+        panoramaMobileUrl: mobileUrl || "",
         initialYawOffset: parseFloat(newNode.initialYawOffset) || 0,
       });
       await fetchProject();

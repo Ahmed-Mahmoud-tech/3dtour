@@ -40,9 +40,12 @@ export default function NodeEditModal({ node, onClose, onSave, saving }) {
     if (newPanoramaFile) {
       setUploading(true);
       try {
-        const { url, previewUrl } = await mediaApi.uploadPanorama(newPanoramaFile);
+        const { url, previewUrl, mobileUrl } = await mediaApi.uploadPanorama(newPanoramaFile);
         updateData.panoramaUrl = url;
         updateData.panoramaPreviewUrl = previewUrl || "";
+        // Always send the key (even "") so a replacement pano with no mobile
+        // tier clears the old node's stale panoramaMobileUrl on merge
+        updateData.panoramaMobileUrl = mobileUrl || "";
       } catch (err) {
         console.error("Failed to upload panorama:", err);
         alert("Failed to upload new panorama image");

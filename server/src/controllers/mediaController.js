@@ -24,11 +24,18 @@ const toPublicUrl = (filePath) => {
 export const uploadPanoramaHandler = asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   // Convert to WebP (~10x smaller than PNG) + tiny preview for blur-up loading
-  const { filePath, previewPath } = await optimizePanorama(req.file.path);
+  // + a 4096-wide mobile tier for GPUs that can't take the full texture.
+  // The uploaded original is deleted once the derived files exist.
+  const { filePath, previewPath, mobilePath } = await optimizePanorama(req.file.path);
   const url = toPublicUrl(filePath);
   const previewUrl = toPublicUrl(previewPath);
-  await Promise.all([recordUpload(url, req.user._id), recordUpload(previewUrl, req.user._id)]);
-  res.status(201).json({ url, previewUrl });
+  const mobileUrl = mobilePath ? toPublicUrl(mobilePath) : '';
+  await Promise.all([
+    recordUpload(url, req.user._id),
+    recordUpload(previewUrl, req.user._id),
+    mobileUrl ? recordUpload(mobileUrl, req.user._id) : Promise.resolve(),
+  ]);
+  res.status(201).json({ url, previewUrl, mobileUrl });
 });
 
 // ─── Upload Audio ─────────────────────────────────────────────────────────────
@@ -71,12 +78,15 @@ export const uploadTransitionVideo = asyncHandler(async (req, res) => {
   res.status(201).json({ videoUrl });
 
   // Shrink the clip in place (same filename, so the URL we just returned
-  // stays valid).
-  // backupDir keeps the camera master in _originals — the served file is
-  // a lossy transcode, and having the master is what made the July 2026
-  // frame-corruption recovery possible (see scripts/restore-originals.mjs)
+  // stays valid). The camera original is DELETED after the transcode passes
+  // its sanity check (policy 2026-07-19: originals are unused weight on disk).
+  // Set KEEP_ORIGINALS=1 to archive masters in _originals instead — that
+  // archive is what made the July 2026 frame-corruption recovery possible
+  // (see scripts/restore-originals.mjs), so flip it back on if transcodes
+  // ever look suspect.
+  const keepOriginals = process.env.KEEP_ORIGINALS === '1';
   await optimizeVideoInPlace(req.file.path, {
-    backupDir: path.join(UPLOADS_ROOT, '_originals'),
+    ...(keepOriginals ? { backupDir: path.join(UPLOADS_ROOT, '_originals') } : {}),
   }).catch((err) =>
     console.error('Video optimization failed (continuing with original):', err.message),
   );

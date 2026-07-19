@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { pickPanoramaUrl } from "../utils/textureTier.js";
 
 /**
  * useSmartPreloader — Intelligent asset preloading with proximity-based prioritization.
@@ -168,13 +169,11 @@ export function useSmartPreloader() {
 
       const tasks = [];
 
-      // Preload panorama (unless videosOnly mode)
-      if (
-        !videosOnly &&
-        node.panoramaUrl &&
-        !imageCache.current.has(node.panoramaUrl)
-      ) {
-        tasks.push(preloadImage(node.panoramaUrl));
+      // Preload panorama (unless videosOnly mode) — the same device tier the
+      // viewer will render, so the cache warms the right file
+      const panoUrl = pickPanoramaUrl(node);
+      if (!videosOnly && panoUrl && !imageCache.current.has(panoUrl)) {
+        tasks.push(preloadImage(panoUrl));
       }
 
       // Preload transition videos from this node's hotspots
@@ -250,8 +249,9 @@ export function useSmartPreloader() {
         const node = project.nodes[nodeId];
 
         // Load just the panorama (videos will load on-demand during navigation)
-        if (node?.panoramaUrl && !imageCache.current.has(node.panoramaUrl)) {
-          await preloadImage(node.panoramaUrl);
+        const neighborUrl = pickPanoramaUrl(node);
+        if (neighborUrl && !imageCache.current.has(neighborUrl)) {
+          await preloadImage(neighborUrl);
         }
         loadedNodes.current.add(nodeId);
 
@@ -282,8 +282,9 @@ export function useSmartPreloader() {
     async (targetNode, transitionData) => {
       const tasks = [];
 
-      if (targetNode?.panoramaUrl) {
-        tasks.push(preloadImage(targetNode.panoramaUrl));
+      const targetUrl = pickPanoramaUrl(targetNode);
+      if (targetUrl) {
+        tasks.push(preloadImage(targetUrl));
       }
       if (transitionData?.videoUrl) {
         tasks.push(preloadVideo(transitionData.videoUrl));

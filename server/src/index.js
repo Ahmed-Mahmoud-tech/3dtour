@@ -13,6 +13,7 @@ import analyticsRoutes from './routes/analytics.js';
 import dashboardRoutes from './routes/dashboard.js';
 import messageRoutes from './routes/messages.js';
 import { startSubscriptionReminderJob } from './jobs/subscriptionReminders.js';
+import { startUploadCleanupJob } from './jobs/uploadCleanup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +30,10 @@ connectDB();
 // Hourly sweep: emails owners about expiring subscriptions and creates
 // admin notifications (see jobs/subscriptionReminders.js).
 startSubscriptionReminderJob();
+
+// Daily sweep: deletes uploaded files no tour uses (48h grace — see
+// jobs/uploadCleanup.js for the exact rules and safety guards).
+startUploadCleanupJob();
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS
