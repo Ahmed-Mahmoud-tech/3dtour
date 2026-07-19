@@ -14,6 +14,11 @@ import {
   FaEdit,
 } from "react-icons/fa";
 
+// Where the public viewer lives (same convention as ClientsPage) — in
+// production the admin is served from its own origin, so this must not
+// default to a hardcoded localhost link at build time.
+const VIEWER_URL = import.meta.env.VITE_VIEWER_URL || "http://localhost:5173";
+
 /**
  * ProjectEditPage
  *
@@ -198,7 +203,7 @@ export default function ProjectEditPage() {
         </div>
         <div className="flex items-center gap-3">
           <a
-            href={`http://localhost:5173/tour/${projectId}`}
+            href={`${VIEWER_URL}/tour/${projectId}`}
             target="_blank"
             rel="noopener noreferrer"
             className="admin-btn-secondary flex items-center gap-2 text-xs"
