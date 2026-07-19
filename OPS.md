@@ -12,6 +12,7 @@ usage is in [DOCKER.md](DOCKER.md).
 | Prod stack | [docker-compose.prod.yml](docker-compose.prod.yml) | GHCR images (no builds on the VPS); client :80, admin :8080, API internal-only |
 | Backups | [ops/backup/](ops/backup/) + `backup` service | Nightly `mongodump` (14-day retention) + weekly uploads tar (keep 4) → `./backups/` |
 | Monitoring | [docker-compose.monitoring.yml](docker-compose.monitoring.yml) | Uptime Kuma (alerts, status page) + Netdata (host/container metrics) |
+| Cheat sheet | [CHEATSHEET.md](CHEATSHEET.md) | Day-to-day command reference + helper scripts: `ops/health.sh`, `ops/backup/restore-drill.sh`, `ops/offsite/pull-backups.sh`, `ops/maintenance/docker-prune.sh` |
 
 ## CI/CD
 
@@ -109,9 +110,15 @@ docker compose -f docker-compose.prod.yml run --rm backup \
 ```
 
 `./backups/` lives on the same disk as the data it protects. For real disaster
-recovery, sync it off the box — e.g. `rclone` to any object storage, or a cron
-on another machine doing `rsync -az vps:~/photovideo360/backups/ ./`. Do this
-before relying on the system; test a restore once, too.
+recovery, sync it off the box: cron
+[ops/offsite/pull-backups.sh](ops/offsite/pull-backups.sh) on any **other**
+machine — it rsync-pulls the tree, keeps a longer local retention, and exits
+non-zero when the newest dump is older than 26 h (so cron/your notifier can
+alert). Test a restore too:
+[ops/backup/restore-drill.sh](ops/backup/restore-drill.sh) restores the newest
+dump into a throwaway Mongo container and counts documents — run it on the VPS
+after any backup-pipeline change. [ops/health.sh](ops/health.sh) bundles the
+freshness check into its overall red/green sweep.
 
 ## Monitoring
 
