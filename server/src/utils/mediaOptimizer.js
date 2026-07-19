@@ -10,16 +10,23 @@ if (process.env.FFPROBE_PATH) ffmpeg.setFfprobePath(process.env.FFPROBE_PATH);
 // (most 2018+ mobile GPUs also accept 8192 textures). The mobile tier serves
 // phones whose GPU texture cap is 4096: without it three.js CPU-downscales the
 // 7680 file on those devices (slow, memory spike, wasted bandwidth). The
-// preview is small enough (~100 KB) to decode near-instantly for the blur-up
-// first paint. The 7680/4096 tier split is mirrored client-side in
+// preview is a tiny (~2 KB, 200px) blur-up placeholder that decodes
+// near-instantly for the first paint — it doubles as the sidebar thumbnail.
+// The 7680/4096 tier split is mirrored client-side in
 // client/src/utils/textureTier.js — keep the widths in sync.
 const PANORAMA_MAX_WIDTH = 7680;
 const PANORAMA_QUALITY = 82;
 // Exported for scripts/backfill-mobile-panoramas.mjs
 export const PANORAMA_MOBILE_WIDTH = 4096;
 export const PANORAMA_MOBILE_QUALITY = 80;
-const PREVIEW_WIDTH = 1536;
+const PREVIEW_WIDTH = 200;
 const PREVIEW_QUALITY = 60;
+// Shared encoder settings for every panorama tier: effort 6 is libwebp's
+// maximum compression search — smaller files at the SAME quality setting, paid
+// for in encode time (panoramas are optimized before the upload response
+// returns, so uploads take a few seconds longer). The 'photo' preset tunes the
+// encoder's filtering for photographic content.
+const PANORAMA_WEBP_OPTS = { effort: 6, preset: 'photo' };
 
 // Transition clips: cap resolution at 4K-equirect and target ~CRF 26. Audio is
 // ALWAYS stripped — the viewer plays transition clips muted, so sound is dead
@@ -70,20 +77,20 @@ export async function optimizePanorama(inputPath, options = {}) {
   await image
     .clone()
     .resize({ width: targetWidth, withoutEnlargement: true })
-    .webp({ quality: PANORAMA_QUALITY, effort: 4 })
+    .webp({ quality: PANORAMA_QUALITY, ...PANORAMA_WEBP_OPTS })
     .toFile(fullPath + '.tmp');
 
   await image
     .clone()
     .resize({ width: PREVIEW_WIDTH, withoutEnlargement: true })
-    .webp({ quality: PREVIEW_QUALITY, effort: 4 })
+    .webp({ quality: PREVIEW_QUALITY, ...PANORAMA_WEBP_OPTS })
     .toFile(previewPath);
 
   if (wantsMobile) {
     await image
       .clone()
       .resize({ width: PANORAMA_MOBILE_WIDTH, withoutEnlargement: true })
-      .webp({ quality: PANORAMA_MOBILE_QUALITY, effort: 4 })
+      .webp({ quality: PANORAMA_MOBILE_QUALITY, ...PANORAMA_WEBP_OPTS })
       .toFile(mobilePath);
   }
 
