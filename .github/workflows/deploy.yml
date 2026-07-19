@@ -1,8 +1,12 @@
 # Deploy — on every push to master:
 #   1. build the three images and push them to GHCR
 #      (ghcr.io/<owner>/<repo>/{server,client,admin}, tagged :latest + :<sha>)
-#   2. rsync docker-compose.prod.yml + ops/ to the VPS and roll the stack over
-#      SSH (ops/deploy/remote-deploy.sh), gated on an API health check.
+#      — kept for the future Docker migration; production does not run them yet.
+#   2. deploy the pushed commit to the PM2/nginx VPS over SSH
+#      (ops/deploy/remote-deploy-pm2.sh): upload a git archive, build on the
+#      server beside the live tree, swap, pm2 restart — health-gated with
+#      automatic rollback. When the VPS migrates to the Docker stack (OPS.md),
+#      switch this job back to ops/deploy/remote-deploy.sh.
 #
 # Required repo secrets for step 2 (until they exist, images are still pushed
 # and the deploy step is skipped with a warning):
@@ -11,10 +15,6 @@
 #   DEPLOY_SSH_KEY   private key (openssh format) authorized on the VPS
 # Optional:
 #   DEPLOY_PORT      SSH port (default 22)
-#   DEPLOY_PATH      stack dir on the VPS (default ~/photovideo360)
-#
-# One-time VPS setup lives in OPS.md (install docker, create $DEPLOY_PATH/.env
-# with JWT_SECRET etc., free the ports).
 
 name: Deploy
 
@@ -84,9 +84,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   deploy:
-    needs: build-push
-    # Run even when build-push was skipped (tag rollback), but not when it failed.
-    if: always() && needs.build-push.result != 'failure' && needs.build-push.result != 'cancelled'
+    # Independent of build-push: images are not used by the PM2 deploy path,
+    # so a Docker-only build issue must not block shipping to production.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,31 +114,24 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "${DEPLOY_PORT:-22}" "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Sync compose + ops files to the VPS
+      - name: Upload source archive
         if: steps.guard.outputs.configured == 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          DEST="${DEPLOY_PATH:-photovideo360}"
-          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEST'"
-          rsync -az -e "ssh -i ~/.ssh/deploy_key -p ${DEPLOY_PORT:-22}" \
-            docker-compose.prod.yml docker-compose.monitoring.yml .env.docker.example ops \
-            "$DEPLOY_USER@$DEPLOY_HOST:$DEST/"
+          git archive --format=tar.gz -o /tmp/deploy.tar.gz HEAD
+          scp -i ~/.ssh/deploy_key -P "${DEPLOY_PORT:-22}" \
+            /tmp/deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/tmp/deploy-${{ github.sha }}.tar.gz"
 
-      - name: Roll the stack
+      - name: Build on the VPS, swap, health-check (auto-rollback)
         if: steps.guard.outputs.configured == 'true'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE_TAG: ${{ inputs.tag != '' && inputs.tag || github.sha }}
         run: |
           ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH='${DEPLOY_PATH:-photovideo360}' GHCR_USER='$GHCR_USER' GHCR_TOKEN='$GHCR_TOKEN' IMAGE_TAG='$IMAGE_TAG' bash -s" \
-            < ops/deploy/remote-deploy.sh
+            "SHA='${{ github.sha }}' bash -s" \
+            < ops/deploy/remote-deploy-pm2.sh
