@@ -58,17 +58,6 @@ export default function TourPage({ projectId }) {
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
 
-  useEffect(() => {
-    if (!showDragHint) return;
-    const dismiss = () => setShowDragHint(false);
-    window.addEventListener("pointerdown", dismiss, { once: true });
-    const timer = setTimeout(dismiss, 8000);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("pointerdown", dismiss);
-    };
-  }, [showDragHint]);
-
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       containerRef.current?.requestFullscreen?.().catch(() => {});
@@ -81,6 +70,8 @@ export default function TourPage({ projectId }) {
     activeNode,
     activeNodeId,
     loading,
+    preloading,
+    preloadProgress,
     error,
     errorReason,
     transition,
@@ -97,6 +88,20 @@ export default function TourPage({ projectId }) {
     videoQueue,
     videoQueueIndex,
   } = useTour(projectId);
+
+  // ─── First-visit drag hint (countdown starts once the tour is visible —
+  //     otherwise the pre-play preloader would eat the 8 s) ──────────────────
+  useEffect(() => {
+    if (!showDragHint) return;
+    if (loading || preloading) return;
+    const dismiss = () => setShowDragHint(false);
+    window.addEventListener("pointerdown", dismiss, { once: true });
+    const timer = setTimeout(dismiss, 8000);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pointerdown", dismiss);
+    };
+  }, [showDragHint, loading, preloading]);
 
   // ─── Analytics (batched, fire-and-forget) ─────────────────────────────────
   const track = useAnalytics(projectId, Boolean(project));
@@ -374,6 +379,36 @@ export default function TourPage({ projectId }) {
     return (
       <div className="flex h-full items-center justify-center bg-black">
         <p className="text-red-400 text-lg">{error}</p>
+      </div>
+    );
+  }
+
+  // ─── Pre-play preloader: nearest scenes must be cached before the tour
+  //     shows (checked AFTER error so access-blocked screens still win) ──────
+  if (preloading) {
+    const pct =
+      preloadProgress.total > 0
+        ? Math.round((preloadProgress.loaded / preloadProgress.total) * 100)
+        : 0;
+    return (
+      <div className="flex h-full items-center justify-center bg-black">
+        <div className="flex flex-col items-center gap-5 px-8 w-full max-w-xs">
+          <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+          <p className="text-white/80 text-sm font-medium">
+            Preparing your tour…
+          </p>
+          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-white/80 transition-all duration-300 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="text-white/40 text-xs">
+            {preloadProgress.total > 0
+              ? `Loading scenes ${preloadProgress.loaded} / ${preloadProgress.total}`
+              : "Loading scenes…"}
+          </p>
+        </div>
       </div>
     );
   }

@@ -4,10 +4,13 @@ import { pickPanoramaUrl } from "../utils/textureTier.js";
 /**
  * useSmartPreloader — Intelligent asset preloading with proximity-based prioritization.
  *
- * Strategy (NO LAG - works exactly like old usePreloader + smart background loading):
- * 1. NO blocking initial load - tour starts instantly (like old usePreloader)
+ * Strategy:
+ * 1. Blocking initial preload BEFORE the tour plays: the start node's panorama
+ *    plus its nearest neighbors by graph distance (preloadInitialNodes, with a
+ *    progress callback driving the pre-play loading screen)
  * 2. On-demand loading when user navigates (via preloadNextAssets)
- * 3. Silent background loading of neighbors after 5 seconds (bonus feature)
+ * 3. Silent background loading of ALL remaining nodes by proximity after the
+ *    user settles (preloadRemaining)
  * 4. Cache everything to avoid re-downloading
  * 5. Cancel and re-prioritize when user navigates
  */
@@ -215,9 +218,46 @@ export function useSmartPreloader() {
   );
 
   /**
-   * Preload remaining nodes based on proximity to active node.
+   * Blocking pre-play preload: the start node's panorama plus its nearest
+   * `neighborCount` nodes by graph distance. Loads SEQUENTIALLY (a parallel
+   * burst of full-size panoramas spikes memory on low-RAM phones and starves
+   * the first — most urgent — download of bandwidth) and reports progress
+   * after each node so the loading screen can show a real bar.
+   * Every underlying loader resolves even on failure, so this always settles.
+   * @param {Object} project - Full project object
+   * @param {string} startNodeId - Node the tour opens on
+   * @param {number} neighborCount - How many nearest nodes besides the start
+   * @param {(loaded: number, total: number) => void} [onProgress]
+   */
+  const preloadInitialNodes = useCallback(
+    async (project, startNodeId, neighborCount = 7, onProgress) => {
+      // Proximity order includes the start node itself at distance 0; if the
+      // graph has fewer reachable nodes than requested, unreachable ones
+      // (distance Infinity) fill the tail — still worth warming.
+      const targets = getNodesByProximity(project.nodes, startNodeId).slice(
+        0,
+        neighborCount + 1,
+      );
+      const total = targets.length;
+      let loaded = 0;
+      onProgress?.(loaded, total);
+
+      for (const { nodeId } of targets) {
+        const url = pickPanoramaUrl(project.nodes[nodeId]);
+        if (url && !imageCache.current.has(url)) {
+          await preloadImage(url);
+        }
+        loadedNodes.current.add(nodeId);
+        loaded += 1;
+        onProgress?.(loaded, total);
+      }
+    },
+    [getNodesByProximity, preloadImage],
+  );
+
+  /**
+   * Preload ALL remaining nodes ordered by proximity to the active node.
    * This runs SILENTLY in the background - never blocks user interaction.
-   * Only loads immediate neighbors (distance 1) with long delays.
    * @param {Object} project - Full project object
    * @param {string} activeNodeId - Current active node
    */
@@ -228,17 +268,17 @@ export function useSmartPreloader() {
 
       const sortedNodes = getNodesByProximity(project.nodes, activeNodeId);
 
-      // Filter: only immediate neighbors (distance 1), not already loaded
+      // Everything not already cached, nearest first
       const remaining = sortedNodes.filter(
-        ({ nodeId, distance }) =>
-          !loadedNodes.current.has(nodeId) && distance === 1,
+        ({ nodeId }) => !loadedNodes.current.has(nodeId),
       );
 
       if (remaining.length === 0) {
         return; // Silent - no console spam
       }
 
-      // Load ONE node at a time with 3-second delays (very gentle)
+      // Load ONE node at a time with delays between them (gentle on the
+      // network + main-thread decode; the whole tour eventually gets cached)
       for (let i = 0; i < remaining.length; i++) {
         // Check if loading was cancelled
         if (loadingCancelledRef.current) {
@@ -255,9 +295,9 @@ export function useSmartPreloader() {
         }
         loadedNodes.current.add(nodeId);
 
-        // 3 second delay between each node to prevent any lag
+        // Pause between nodes so the sweep never causes visible lag
         if (i < remaining.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await new Promise((resolve) => setTimeout(resolve, 1500));
         }
       }
     },
@@ -305,6 +345,7 @@ export function useSmartPreloader() {
   }, []);
 
   return {
+    preloadInitialNodes,
     preloadRemaining,
     cancelBackgroundLoading,
     preloadNextAssets,

@@ -9,6 +9,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 // defines the same keys — see vite.config.js.)
 const IS_STATIC = process.env.NEXT_PUBLIC_STATIC_TOUR === "1";
 
+// Pre-play preload: the start node + its 7 nearest nodes by graph distance
+// must be cached before the tour is shown; everything else loads in the
+// background afterwards.
+const INITIAL_PRELOAD_NEIGHBORS = 7;
+// A dead connection must not brick the tour behind the loading screen — after
+// this long the tour starts anyway and the preload keeps going underneath.
+const INITIAL_PRELOAD_WATCHDOG_MS = 45_000;
+
 /**
  * useTour — Central state machine for the 360 tour viewer.
  *
@@ -19,7 +27,8 @@ const IS_STATIC = process.env.NEXT_PUBLIC_STATIC_TOUR === "1";
  *  - Sequential multi-video queue playback
  *  - Audio state
  *  - UI visibility (hotspots/signs hidden during transitions)
- *  - Smart preloading (initial 5 nodes, then background loading by proximity)
+ *  - Smart preloading (blocking pre-play load of the start node + 7 nearest,
+ *    then background loading of the rest by proximity)
  */
 export function useTour(projectId) {
   const [project, setProject] = useState(null);
@@ -28,9 +37,20 @@ export function useTour(projectId) {
   const [error, setError] = useState(null);
   const [errorReason, setErrorReason] = useState(null); // e.g. 'subscription_expired'
 
+  // Pre-play preload phase (between fetch completing and the tour showing)
+  const [preloading, setPreloading] = useState(false);
+  const [preloadProgress, setPreloadProgress] = useState({
+    loaded: 0,
+    total: 0,
+  });
+
   // Smart preloader
-  const { preloadRemaining, cancelBackgroundLoading, preloadNextAssets } =
-    useSmartPreloader();
+  const {
+    preloadInitialNodes,
+    preloadRemaining,
+    cancelBackgroundLoading,
+    preloadNextAssets,
+  } = useSmartPreloader();
 
   // Transition state
   const [transition, setTransition] = useState(null); // { videoUrl, targetNodeId }
@@ -47,7 +67,33 @@ export function useTour(projectId) {
   const [audioMuted, setAudioMuted] = useState(false);
   const audioRef = useRef(null);
 
-  // ─── Fetch project (NO blocking preload - instant start like old usePreloader) ────
+  // ─── Blocking pre-play preload (start node + nearest neighbors) ────────────
+  // Fire-and-forget from fetchProject; preloadInitialNodes always settles
+  // (individual asset failures resolve, never reject), and the watchdog
+  // guarantees the loading screen can't outlive a dead connection.
+  const runInitialPreload = useCallback(
+    async (proj, startNodeId) => {
+      setPreloading(true);
+      const watchdog = setTimeout(() => {
+        console.warn("Initial preload watchdog: starting tour anyway");
+        setPreloading(false);
+      }, INITIAL_PRELOAD_WATCHDOG_MS);
+      try {
+        await preloadInitialNodes(
+          proj,
+          startNodeId,
+          INITIAL_PRELOAD_NEIGHBORS,
+          (loaded, total) => setPreloadProgress({ loaded, total }),
+        );
+      } finally {
+        clearTimeout(watchdog);
+        setPreloading(false);
+      }
+    },
+    [preloadInitialNodes],
+  );
+
+  // ─── Fetch project, then preload before the tour shows ────────────────────
   useEffect(() => {
     if (!projectId && !IS_STATIC) return;
 
@@ -80,6 +126,10 @@ export function useTour(projectId) {
         const initialId =
           configured && data.nodes[configured] ? configured : nodeIds[0];
         setActiveNodeId(initialId);
+
+        // Hold the tour behind the preloader until the nearest nodes are
+        // cached (not awaited — `loading` must clear so progress can render).
+        runInitialPreload(data, initialId);
       } catch (err) {
         setError(err.response?.data?.message || "Failed to load tour");
         setErrorReason(err.response?.data?.reason || null);
@@ -89,7 +139,7 @@ export function useTour(projectId) {
     };
 
     fetchProject();
-  }, [projectId]);
+  }, [projectId, runInitialPreload]);
 
   // ─── Background audio management ───────────────────────────────────────────
   useEffect(() => {
@@ -118,24 +168,27 @@ export function useTour(projectId) {
     };
   }, [project]);
 
-  // ─── Background preload neighbors (silent, non-blocking) ──────────────────
+  // ─── Background preload of all remaining nodes (silent, non-blocking) ─────
   useEffect(() => {
     if (!project || !activeNodeId) return;
+    // Don't compete with the blocking pre-play preload for bandwidth — the
+    // sweep starts once the tour is actually showing.
+    if (preloading) return;
 
     // Cancel any previous background loading to re-prioritize from current node
     cancelBackgroundLoading();
 
-    // Start silent background loading of immediate neighbors
-    // This runs in the background and never blocks user interaction
+    // Silent background sweep of everything not yet cached, nearest first.
+    // This runs in the background and never blocks user interaction.
     const timer = setTimeout(() => {
       preloadRemaining(project, activeNodeId);
-    }, 5000); // 5 seconds - user has settled, start preloading neighbors
+    }, 5000); // 5 seconds - user has settled, start preloading the rest
 
     return () => {
       clearTimeout(timer);
       cancelBackgroundLoading();
     };
-  }, [project, activeNodeId, preloadRemaining, cancelBackgroundLoading]);
+  }, [project, activeNodeId, preloading, preloadRemaining, cancelBackgroundLoading]);
 
   const toggleAudio = useCallback(() => {
     if (!audioRef.current) return;
@@ -285,6 +338,8 @@ export function useTour(projectId) {
     activeNode,
     activeNodeId,
     loading,
+    preloading,
+    preloadProgress,
     error,
     errorReason,
     transition,
