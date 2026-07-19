@@ -8,6 +8,12 @@ import { pickPanoramaUrl } from "../../utils/textureTier.js";
 
 const SPHERE_RADIUS = 50;
 
+// How long VideoSphere waits for `canplaythrough` before starting playback
+// anyway. Preloaded clips satisfy it from cache almost instantly; a cold clip
+// on a slow link gets this much head start of buffering so it can play
+// smoothly instead of starting at once and stuttering.
+const VIDEO_START_MAX_WAIT_MS = 4000;
+
 // ─── Nadir logo patch settings ───────────────────────────────────────────────
 // A flat disc pinned at the bottom of the scene to hide the robot/tripod that
 // carries the camera. Shows the project's client logo when set; falls back to
@@ -599,8 +605,36 @@ function VideoSphere({
       }
     };
 
+    // Start playback only once the browser judges it can reach the end
+    // without rebuffering (`canplaythrough`) — a fully preloaded clip fires
+    // it from cache almost immediately, while a cold clip gets a buffering
+    // head start instead of starting instantly and stuttering. The cap
+    // guarantees motion even on connections too slow to ever satisfy
+    // canplaythrough (mid-play buffering beats a frozen screen forever).
+    let startRequested = false;
+    let startCapTimer = null;
+    const startPlayback = () => {
+      if (startRequested || !mounted) return;
+      startRequested = true;
+      clearTimeout(startCapTimer);
+      const playPromise = video.play();
+      if (playPromise) {
+        playPromise.catch((err) => {
+          if (!mounted) return;
+          if (err.name !== "AbortError") {
+            console.error("Transition video play rejected:", err);
+            onEndedRef.current?.();
+          }
+        });
+      }
+    };
+
     const handleError = () => {
       if (!mounted) return;
+      // Block the delayed start — playing an errored element would surface
+      // a second rejection and double-fire onEnded.
+      startRequested = true;
+      clearTimeout(startCapTimer);
       console.error("Transition video failed:", videoUrl);
       onEndedRef.current?.();
     };
@@ -608,23 +642,14 @@ function VideoSphere({
     video.addEventListener("playing", handlePlaying, { once: true });
     video.addEventListener("ended", handleEnded);
     video.addEventListener("error", handleError);
+    video.addEventListener("canplaythrough", startPlayback, { once: true });
 
     video.src = videoUrl;
-
-    // Try to play with better error handling
-    const playPromise = video.play();
-    if (playPromise) {
-      playPromise.catch((err) => {
-        if (!mounted) return;
-        if (err.name !== "AbortError") {
-          console.error("Transition video play rejected:", err);
-          onEndedRef.current?.();
-        }
-      });
-    }
+    startCapTimer = setTimeout(startPlayback, VIDEO_START_MAX_WAIT_MS);
 
     return () => {
       mounted = false;
+      clearTimeout(startCapTimer);
       if (rvfcHandle && typeof video.cancelVideoFrameCallback === "function") {
         video.cancelVideoFrameCallback(rvfcHandle);
       }
@@ -632,6 +657,7 @@ function VideoSphere({
       video.removeEventListener("playing", handlePlaying);
       video.removeEventListener("ended", handleEnded);
       video.removeEventListener("error", handleError);
+      video.removeEventListener("canplaythrough", startPlayback);
       setTexture(null);
       video.pause();
       // removeAttribute + load() is what actually releases the decoder and

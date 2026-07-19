@@ -84,6 +84,7 @@ export default function TourPage({ projectId }) {
     onTransitionComplete,
     setActiveNodeId,
     preloadNextAssets,
+    cancelBackgroundLoading,
     // Multi-video queue state
     videoQueue,
     videoQueueIndex,
@@ -206,6 +207,9 @@ export default function TourPage({ projectId }) {
     }
     navLockRef.current = true;
     setIsPreRender(true);
+    // Stop the background sweep NOW — the first hop's clip download and the
+    // transition playback both need the bandwidth it was using.
+    cancelBackgroundLoading();
 
     try {
       if (hotspotId) {
@@ -308,6 +312,7 @@ export default function TourPage({ projectId }) {
     if (navLockRef.current) return; // Prevent double-navigation (rage clicks)
     if (!project.nodes?.[targetNodeId]) return; // stale entry — node deleted
     navLockRef.current = true;
+    cancelBackgroundLoading(); // free the bandwidth for the jump's panorama
 
     cancelTransition();
     // Reset camera to 0,0 for sidebar navigation (fresh start)

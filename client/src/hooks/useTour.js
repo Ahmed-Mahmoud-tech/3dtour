@@ -175,6 +175,11 @@ export function useTour(projectId) {
     // Don't compete with the blocking pre-play preload for bandwidth — the
     // sweep starts once the tour is actually showing.
     if (preloading) return;
+    // Never download/decode in the background while a transition clip is
+    // playing: that competition for bandwidth and the main thread is what
+    // makes clips drop frames. The cleanup below cancels the sweep the
+    // moment a transition starts; it resumes 5 s after the video ends.
+    if (isTransitioning) return;
 
     // Cancel any previous background loading to re-prioritize from current node
     cancelBackgroundLoading();
@@ -189,7 +194,14 @@ export function useTour(projectId) {
       clearTimeout(timer);
       cancelBackgroundLoading();
     };
-  }, [project, activeNodeId, preloading, preloadRemaining, cancelBackgroundLoading]);
+  }, [
+    project,
+    activeNodeId,
+    preloading,
+    isTransitioning,
+    preloadRemaining,
+    cancelBackgroundLoading,
+  ]);
 
   const toggleAudio = useCallback(() => {
     if (!audioRef.current) return;
@@ -353,6 +365,7 @@ export function useTour(projectId) {
     onTransitionComplete,
     setActiveNodeId,
     preloadNextAssets, // Expose for hover preloading
+    cancelBackgroundLoading, // Stop the sweep the moment a navigation starts
     // Multi-video queue state
     videoQueue,
     videoQueueIndex,
