@@ -1,18 +1,13 @@
-import { Manrope, IBM_Plex_Sans_Arabic } from 'next/font/google';
+import { El_Messiri } from 'next/font/google';
 import { SITE_URL } from '../src/landing/content.js';
 import './globals.css';
 
-const manrope = Manrope({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-manrope',
-  display: 'swap',
-});
-
-const plexArabic = IBM_Plex_Sans_Arabic({
-  subsets: ['arabic'],
+// One font for the whole app (Latin + Arabic). Bound to --font-messiri and
+// used by both the `sans` and `arabic` Tailwind families in tailwind.config.js.
+const elMessiri = El_Messiri({
+  subsets: ['arabic', 'latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-arabic',
+  variable: '--font-messiri',
   display: 'swap',
 });
 
@@ -34,7 +29,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${manrope.variable} ${plexArabic.variable}`}>
+    <html lang="en" className={elMessiri.variable}>
       <body>{children}</body>
     </html>
   );

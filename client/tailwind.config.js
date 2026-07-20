@@ -20,10 +20,11 @@ module.exports = {
         },
       },
       fontFamily: {
-        // --font-manrope / --font-arabic come from next/font in app/layout.jsx.
-        // The Vite static-player build has no next/font — system fallbacks apply.
-        sans: ['var(--font-manrope)', 'var(--font-arabic)', 'system-ui', 'sans-serif'],
-        arabic: ['var(--font-arabic)', 'var(--font-manrope)', 'system-ui', 'sans-serif'],
+        // El Messiri (Latin + Arabic) is the single app font — --font-messiri
+        // comes from next/font in app/layout.jsx. The Vite static-player build
+        // has no next/font, so system fallbacks apply there.
+        sans: ['var(--font-messiri)', 'system-ui', 'sans-serif'],
+        arabic: ['var(--font-messiri)', 'system-ui', 'sans-serif'],
       },
     },
   },

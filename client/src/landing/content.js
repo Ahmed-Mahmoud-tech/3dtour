@@ -705,6 +705,14 @@ export const STRINGS = {
           title: "Complete host flexibility",
           body: "Includes three months of premium cloud hosting completely free—with full freedom to export and self-host on your own infrastructure anytime.",
         },
+        {
+          title: "Advanced Visitor Analytics Dashboard",
+          body: "Gain deep insights into your audience. Track total visits, monitor engagement hotspots within the tour, and analyze average dwell time to optimize your marketing strategy based on real user behavior.",
+        },
+        {
+          title: "Integrated Direct Messaging",
+          body: "Turn viewers into leads instantly. With built-in messaging, visitors can send inquiries or booking requests directly from within the tour, significantly shortening the path from interest to contract.",
+        },
       ],
     },
     portfolio: {
@@ -912,6 +920,14 @@ export const STRINGS = {
         {
           title: "مرونة تامة واستقلالية في الاستضافة",
           body: "نوفر استضافة سحابية ممتازة ومجانية لأول ٣ أشهر، مع صلاحية مطلقة لنقل ملفات الجولة كاملة وتشغيلها على سيرفراتك الخاصة مدى الحياة.",
+        },
+        {
+          title: "لوحة تحليلات ذكية ومفصلة",
+          body: "تابع حركة زوارك بدقة متناهية. اكتشف أعداد الزوار، أكثر المناطق جذباً داخل الجولة، ومتوسط وقت بقاء العميل، لتفهم سلوك جمهورك وتطور استراتيجيتك التسويقية.",
+        },
+        {
+          title: "نظام تواصل مباشر مع الزوار",
+          body: "لا تكتفِ بجذب العميل، بل استقبله! فعل خاصية الرسائل داخل الجولة، ليتسنى للزوار مراسلتك مباشرة للاستفسار أو حجز موعد، مما يختصر المسافة بين الإعجاب والتعاقد.",
         },
       ],
     },

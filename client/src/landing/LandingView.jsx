@@ -250,7 +250,7 @@ function Hero({ t, lang }) {
             </div>
           </Reveal>
           <Reveal delay={320}>
-            <dl className="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-xl">
+            <dl className="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-xl">
               {t.hero.stats.map((s) => (
                 <div key={s.label}>
                   <dt className="sr-only">{s.label}</dt>
