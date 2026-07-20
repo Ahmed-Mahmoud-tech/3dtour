@@ -531,9 +531,14 @@ function VideoSphere({
         matRef.current.opacity = opacityRef.current;
         // Still fading in — ask for another frame.
         invalidate();
-      } else if (!rvfcActiveRef.current) {
-        // Fully faded in, still playing, no rVFC: keep the loop alive so the
-        // texture keeps updating. (With rVFC the video frames drive rendering.)
+      } else {
+        // Fully faded in and still playing: keep rendering EVERY display frame
+        // for even pacing. The texture UPLOAD stays gated by rVFC (new decoded
+        // frames only — see pumpVideoFrames), so this costs cheap draw calls,
+        // not 4K re-uploads. Rendering only when the rVFC callback fired (the
+        // old behavior) tied presentation to rVFC→paint timing jitter, which is
+        // what read as stutter even for fully-cached clips. Without rVFC, the
+        // needsUpdate at the top of this callback still refreshes the texture.
         invalidate();
       }
     }
@@ -949,7 +954,10 @@ export default function SphereViewer({
           WebkitUserDrag: "none",
         }}
         onDragStart={(e) => e.preventDefault()}
-        gl={{ antialias: true }}
+        // high-performance: on dual-GPU laptops, render on the discrete GPU
+        // instead of the weak integrated one (which judders 4K video texture
+        // uploads). powerPreference is only read at context creation.
+        gl={{ antialias: true, powerPreference: "high-performance" }}
         onCreated={({ gl }) => {
           const el = gl.domElement;
           el.addEventListener("webglcontextlost", (e) => {

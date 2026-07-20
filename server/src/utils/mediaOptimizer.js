@@ -28,10 +28,15 @@ const PREVIEW_QUALITY = 60;
 // encoder's filtering for photographic content.
 const PANORAMA_WEBP_OPTS = { effort: 6, preset: 'photo' };
 
-// Transition clips: cap resolution at 4K-equirect and target ~CRF 26. Audio is
-// ALWAYS stripped — the viewer plays transition clips muted, so sound is dead
-// weight in every file.
-const VIDEO_MAX_WIDTH = 3840;
+// Transition clips: cap resolution at 2048-wide equirect and target ~CRF 26.
+// (Was 4K/3840. A transition clip plays for ~1–2 s while the camera is moving,
+// so 4K detail is imperceptible — but decoding it and uploading each ~29 MB
+// frame to a GPU texture 30×/s is what made transitions stutter on all but the
+// strongest GPUs. 2048 quarters the per-frame decode + upload cost. Existing
+// clips already stored at 3840 aren't touched until re-encoded — run
+// scripts/reencode-transition-videos.mjs to shrink them.) Audio is ALWAYS
+// stripped — the viewer plays transition clips muted, so sound is dead weight.
+const VIDEO_MAX_WIDTH = 2048;
 const VIDEO_CRF = 26;
 // Re-encode only when the source is heavier than this (bits/sec); already
 // optimized files just get their audio track remuxed away.
