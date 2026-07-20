@@ -295,7 +295,9 @@ export default function StudioPage() {
             >
               <FaInfoCircle size={11} className="text-blue-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-white truncate">{s.popupContent?.title || 'Info Sign'}</p>
+                <p className="text-xs text-white truncate">
+                  {s.linkUrl ? '🔗 ' : ''}{s.tooltip || s.popupContent?.title || (s.linkUrl ? 'Link Sign' : 'Info Sign')}
+                </p>
                 <p className="text-[10px] text-gray-600">{s.position2D.x_deg}°, {s.position2D.y_deg}°</p>
               </div>
               <button

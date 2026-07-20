@@ -81,6 +81,12 @@ const InfoSignSchema = new mongoose.Schema(
     scale: { type: ScaleSchema, default: () => ({}) },
     appearance: { type: AppearanceSchema, default: () => ({}) },
     popupContent: { type: PopupContentSchema, default: () => ({}) },
+    // Optional external link — when set, clicking the sign opens this URL in a
+    // new tab instead of the popup. The viewer sanitizes the scheme (http(s)/
+    // mailto/tel only) before opening, so a stored javascript:/data: URL can't run.
+    linkUrl: { type: String, default: "" },
+    // Optional hover label. Falls back to popupContent.title when empty.
+    tooltip: { type: String, default: "" },
   },
   { _id: false },
 );

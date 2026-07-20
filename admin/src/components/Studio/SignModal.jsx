@@ -35,6 +35,8 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
   const [showPicker, setShowPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  const [linkUrl, setLinkUrl] = useState(initialData?.linkUrl || "");
+  const [tooltip, setTooltip] = useState(initialData?.tooltip || "");
   const [title, setTitle] = useState(initialData?.popupContent?.title || "");
   const [coverImageFile, setCoverImageFile] = useState(null);
   const [htmlContent, setHtmlContent] = useState(
@@ -43,30 +45,59 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
   const [scale, setScale] = useState(
     initialData?.scale || { width: 1.0, height: 1.0 },
   );
+  // 'popup' → normal rich popup on click; 'url' → open a link on click.
+  // An existing sign with a stored linkUrl opens in url mode.
+  const [signType, setSignType] = useState(
+    initialData?.linkUrl ? "url" : "popup",
+  );
   const [error, setError] = useState("");
 
   const handleSave = async () => {
     setError("");
+
+    // URL is required in link mode.
+    if (signType === "url" && !linkUrl.trim()) {
+      setError("Please enter a link URL.");
+      return;
+    }
+
     setUploading(true);
     try {
       const assetUrl = iconName;
-      // Keep the existing cover on edit unless a new file replaces it
-      let coverImageUrl = initialData?.popupContent?.coverImage || "";
-
-      if (coverImageFile) {
-        const res = await mediaApi.uploadImage(coverImageFile);
-        coverImageUrl = res.url;
-      }
-
-      const sign = {
-        position2D: { x_deg: coords.x_deg, y_deg: coords.y_deg },
-        scale: {
-          width: parseFloat(scale.width),
-          height: parseFloat(scale.height),
-        },
-        appearance: { renderType: "icon", assetUrl, iconColor, color: signColor },
-        popupContent: { title, coverImage: coverImageUrl, htmlContent },
+      const appearance = { renderType: "icon", assetUrl, iconColor, color: signColor };
+      const position2D = { x_deg: coords.x_deg, y_deg: coords.y_deg };
+      const scaleData = {
+        width: parseFloat(scale.width),
+        height: parseFloat(scale.height),
       };
+
+      let sign;
+      if (signType === "url") {
+        // Link sign: store the URL + optional tooltip, clear any popup content.
+        sign = {
+          position2D,
+          scale: scaleData,
+          appearance,
+          linkUrl: linkUrl.trim(),
+          tooltip: tooltip.trim(),
+          popupContent: { title: "", coverImage: "", htmlContent: "" },
+        };
+      } else {
+        // Popup sign: keep the existing cover on edit unless a new file replaces it.
+        let coverImageUrl = initialData?.popupContent?.coverImage || "";
+        if (coverImageFile) {
+          const res = await mediaApi.uploadImage(coverImageFile);
+          coverImageUrl = res.url;
+        }
+        sign = {
+          position2D,
+          scale: scaleData,
+          appearance,
+          linkUrl: "",
+          tooltip: "",
+          popupContent: { title, coverImage: coverImageUrl, htmlContent },
+        };
+      }
 
       onSave(sign);
     } catch (err) {
@@ -104,6 +135,35 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
               {error}
             </p>
           )}
+
+          {/* Sign type — popup vs external link */}
+          <div>
+            <label className="admin-label">On Click</label>
+            <div className="flex gap-2">
+              {[
+                { value: "popup", label: "Show Popup" },
+                { value: "url", label: "Open Link" },
+              ].map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border transition-colors
+                    ${signType === opt.value
+                      ? "bg-blue-500 text-white border-blue-500"
+                      : "bg-gray-800 text-gray-400 border-gray-700 hover:border-gray-600"}`}
+                >
+                  <input
+                    type="radio"
+                    name="signType"
+                    value={opt.value}
+                    checked={signType === opt.value}
+                    onChange={() => setSignType(opt.value)}
+                    className="sr-only"
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+          </div>
 
           {/* Appearance — icon only */}
           <div>
@@ -248,43 +308,79 @@ export default function SignModal({ coords, onSave, onClose, initialData }) {
 
           <hr className="border-gray-800" />
 
-          {/* Popup content */}
-          <div>
-            <label className="admin-label">Popup Title</label>
-            <input
-              type="text"
-              className="admin-input"
-              placeholder="Smart TV 65 Inch"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
+          {signType === "url" ? (
+            <>
+              {/* Link (required) + optional tooltip */}
+              <div>
+                <label className="admin-label">Link URL *</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  placeholder="https://example.com"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                />
+                <p className="text-gray-600 text-xs mt-1">
+                  Clicking the sign opens this link in a new tab. Only http(s),
+                  mailto and tel links are allowed.
+                </p>
+              </div>
 
-          <div>
-            <label className="admin-label">Popup Cover Image (optional)</label>
-            <input
-              type="file"
-              accept="image/*"
-              className="admin-input text-gray-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-blue-600 file:text-white cursor-pointer"
-              onChange={(e) => setCoverImageFile(e.target.files[0] || null)}
-            />
-          </div>
+              <div>
+                <label className="admin-label">Hover Tooltip (optional)</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  placeholder="Shown when the visitor hovers the sign"
+                  value={tooltip}
+                  onChange={(e) => setTooltip(e.target.value)}
+                />
+                <p className="text-gray-600 text-xs mt-1">
+                  Small label shown on hover. Leave empty for no tooltip.
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Popup content */}
+              <div>
+                <label className="admin-label">Popup Title</label>
+                <input
+                  type="text"
+                  className="admin-input"
+                  placeholder="Smart TV 65 Inch"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
 
-          <div>
-            <label className="admin-label">HTML Content</label>
-            <textarea
-              className="admin-input font-mono text-xs resize-none"
-              rows={6}
-              placeholder={
-                "<div class='card'><h3>Title</h3><p>Description</p></div>"
-              }
-              value={htmlContent}
-              onChange={(e) => setHtmlContent(e.target.value)}
-            />
-            <p className="text-gray-600 text-xs mt-1">
-              HTML is sanitized (DOMPurify) before rendering to the viewer.
-            </p>
-          </div>
+              <div>
+                <label className="admin-label">Popup Cover Image (optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="admin-input text-gray-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-blue-600 file:text-white cursor-pointer"
+                  onChange={(e) => setCoverImageFile(e.target.files[0] || null)}
+                />
+              </div>
+
+              <div>
+                <label className="admin-label">HTML Content</label>
+                <textarea
+                  className="admin-input font-mono text-xs resize-none"
+                  rows={6}
+                  placeholder={
+                    "<div class='card'><h3>Title</h3><p>Description</p></div>"
+                  }
+                  value={htmlContent}
+                  onChange={(e) => setHtmlContent(e.target.value)}
+                />
+                <p className="text-gray-600 text-xs mt-1">
+                  HTML is sanitized (DOMPurify) before rendering to the viewer.
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}

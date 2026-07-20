@@ -165,7 +165,7 @@ function ExistingPins({ node, onEditItem, placementMode }) {
               onClick={() => !placementMode && onEditItem?.("sign", s)}
               className={`transition-transform
                 ${!placementMode ? "cursor-pointer hover:scale-110" : "pointer-events-none"}`}
-              title={s.popupContent?.title || "Info sign — click to edit"}
+              title={s.tooltip || s.popupContent?.title || (s.linkUrl ? "Link sign — click to edit" : "Info sign — click to edit")}
             >
               <SignBadge
                 size={sW}

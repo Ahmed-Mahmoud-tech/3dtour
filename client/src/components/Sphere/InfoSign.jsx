@@ -4,32 +4,56 @@ import { degToPosition } from '../../utils/coordUtils.js';
 import { hexToRgba, darkenHex } from '../../utils/colorUtils.js';
 import { DynamicIcon } from '../../utils/iconCompiler.jsx';
 
+// Normalize a user-authored link into something safe to hand window.open.
+// Only http(s)/mailto/tel are allowed; a schemeless value like "example.com"
+// is assumed https. Anything else (javascript:, data:, …) returns null so the
+// sign falls back to opening its popup instead of running the stored string.
+function safeHref(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  if (/^(https?:|mailto:|tel:)/i.test(raw)) return raw;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return null; // some other scheme — reject
+  return `https://${raw}`; // bare domain / path
+}
+
 export default function InfoSign({ sign, onOpenPopup }) {
   const [hovered, setHovered] = useState(false);
   const position = degToPosition(sign.position2D.x_deg, sign.position2D.y_deg);
   const scale = sign.scale || { width: 1, height: 1 };
   const baseSize = 42 * scale.width;
   const appearance = sign.appearance || {};
-  const title = sign.popupContent?.title;
+  // Hover label: explicit tooltip wins, else the popup title (both optional).
+  const label = sign.tooltip || sign.popupContent?.title || '';
+  const href = safeHref(sign.linkUrl);
   const badgeColor = appearance.color || '#10c9b7';
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    if (href) {
+      // New tab so the visitor keeps their place in the tour.
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    onOpenPopup(sign.popupContent, sign.id);
+  };
 
   return (
     <Html position={position} center zIndexRange={[1, 10]} style={{ pointerEvents: 'auto' }}>
       <div className="relative flex items-center justify-center">
-        {/* Title pill floats above the badge on hover; absolute so it never
+        {/* Label pill floats above the badge on hover; absolute so it never
             shifts the badge off its anchor point */}
-        {title && (
+        {label && (
           <div
             className={`absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap
                         rounded-full bg-black/75 backdrop-blur-sm px-3 py-1 text-xs font-medium
                         text-white shadow-lg transition-all duration-200 pointer-events-none
                         ${hovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'}`}
           >
-            {title}
+            {label}
           </div>
         )}
         <div
-          onClick={(e) => { e.stopPropagation(); onOpenPopup(sign.popupContent, sign.id); }}
+          onClick={handleClick}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           className="cursor-pointer flex items-center justify-center rounded-full
@@ -44,7 +68,7 @@ export default function InfoSign({ sign, onOpenPopup }) {
               ? `0 4px 16px rgba(0,0,0,0.4), 0 0 18px ${hexToRgba(badgeColor, 0.6)}`
               : `0 3px 10px rgba(0,0,0,0.4), 0 0 10px ${hexToRgba(badgeColor, 0.35)}`,
           }}
-          title={title || 'Info'}
+          title={label || (href ? 'Open link' : 'Info')}
         >
           <DynamicIcon
             name={appearance.assetUrl || 'FaInfoCircle'}
