@@ -415,7 +415,13 @@ export default function TourPage({ projectId }) {
 
   if (!activeNode) return null;
 
-  const audioEnabled = Boolean(project?.settings?.globalBackgroundAudio?.src);
+  // The hosted viewer plays a default ambient track even without owner-set
+  // audio (see DEFAULT_BACKGROUND_AUDIO_URL in useTour), so the mute control is
+  // available there too; the static export only has audio when one was bundled.
+  // `disabled` is the explicit "silent tour" opt-out — no audio, no control.
+  const audioCfg = project?.settings?.globalBackgroundAudio;
+  const audioEnabled =
+    !audioCfg?.disabled && (Boolean(audioCfg?.src) || !IS_STATIC);
 
   return (
     <div

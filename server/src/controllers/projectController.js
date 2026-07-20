@@ -187,7 +187,20 @@ export const updateProject = asyncHandler(async (req, res) => {
     }
     project.info = { ...project.info, ...info };
   }
-  if (settings) project.settings = { ...project.settings, ...settings };
+  if (settings) {
+    // Background audio replaced (or cleared) — remove the previous uploaded
+    // file. deleteUploadByUrl ignores non-/uploads URLs, so the default track
+    // ("/music/...") is never touched here.
+    const oldAudioSrc = project.settings?.globalBackgroundAudio?.src;
+    if (
+      settings.globalBackgroundAudio?.src !== undefined &&
+      oldAudioSrc &&
+      settings.globalBackgroundAudio.src !== oldAudioSrc
+    ) {
+      deleteUploadByUrl(oldAudioSrc);
+    }
+    project.settings = { ...project.settings, ...settings };
+  }
   if (nodes) {
     project.nodes = nodes;
     project.markModified("nodes");

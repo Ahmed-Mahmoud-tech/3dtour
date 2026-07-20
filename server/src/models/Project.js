@@ -117,6 +117,10 @@ const GlobalBackgroundAudioSchema = new mongoose.Schema(
     src: { type: String, default: "" },
     defaultVolume: { type: Number, default: 0.4, min: 0, max: 1 },
     allowMute: { type: Boolean, default: true },
+    // When true, the tour plays NO background audio — not even the viewer's
+    // default track. (An empty `src` alone falls back to the default; this is
+    // the explicit "silent tour" opt-out.)
+    disabled: { type: Boolean, default: false },
   },
   { _id: false },
 );

@@ -38,6 +38,9 @@ export default function ProjectEditPage() {
   const [audioUploading, setAudioUploading] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [logoRemoving, setLogoRemoving] = useState(false);
+  const [audioRemoving, setAudioRemoving] = useState(false);
+  const [audioDisabling, setAudioDisabling] = useState(false);
 
   // New node form
   const [newNode, setNewNode] = useState({
@@ -103,6 +106,53 @@ export default function ProjectEditPage() {
     }
   };
 
+  // ─── Remove audio ─────────────────────────────────────────────────────────
+  // Clearing the src makes the server delete the uploaded file; the viewer
+  // then falls back to the default background track.
+  const handleAudioRemove = async () => {
+    if (!project?.settings?.globalBackgroundAudio?.src) return;
+    if (
+      !window.confirm(
+        "Remove the background audio? The uploaded file will be deleted.",
+      )
+    )
+      return;
+    setAudioRemoving(true);
+    try {
+      await projectApi.update(projectId, {
+        settings: {
+          ...project.settings,
+          globalBackgroundAudio: {
+            ...project.settings?.globalBackgroundAudio,
+            src: "",
+          },
+        },
+      });
+      await fetchProject();
+    } finally {
+      setAudioRemoving(false);
+    }
+  };
+
+  // ─── Toggle "silent tour" (disable audio, incl. the default) ───────────────
+  const handleToggleAudioDisabled = async (disabled) => {
+    setAudioDisabling(true);
+    try {
+      await projectApi.update(projectId, {
+        settings: {
+          ...project.settings,
+          globalBackgroundAudio: {
+            ...project.settings?.globalBackgroundAudio,
+            disabled,
+          },
+        },
+      });
+      await fetchProject();
+    } finally {
+      setAudioDisabling(false);
+    }
+  };
+
   // ─── Upload client logo (nadir patch) ───────────────────────────────────
   // The server deletes the previously uploaded logo file when the URL changes.
   const handleLogoUpload = async () => {
@@ -115,6 +165,26 @@ export default function ProjectEditPage() {
       setLogoFile(null);
     } finally {
       setLogoUploading(false);
+    }
+  };
+
+  // ─── Remove client logo ───────────────────────────────────────────────────
+  // Clearing nadirLogoUrl makes the server delete the uploaded file; the viewer
+  // then falls back to the default Gateverse logo.
+  const handleLogoRemove = async () => {
+    if (!project?.info?.nadirLogoUrl) return;
+    if (
+      !window.confirm(
+        "Remove the client logo? The uploaded file will be deleted.",
+      )
+    )
+      return;
+    setLogoRemoving(true);
+    try {
+      await projectApi.update(projectId, { info: { nadirLogoUrl: "" } });
+      await fetchProject();
+    } finally {
+      setLogoRemoving(false);
     }
   };
 
@@ -285,9 +355,21 @@ export default function ProjectEditPage() {
                 alt="Current client logo"
                 className="w-16 h-16 rounded-full object-cover bg-gray-800 border border-gray-700"
               />
-              <p className="text-xs text-green-400 break-all">
+              <p className="text-xs text-green-400 break-all flex-1">
                 Current: {project.info.nadirLogoUrl}
               </p>
+              <button
+                onClick={handleLogoRemove}
+                disabled={logoRemoving}
+                className="admin-btn-secondary flex items-center gap-2 text-xs flex-shrink-0"
+              >
+                {logoRemoving ? (
+                  <FaSyncAlt size={12} className="animate-spin" />
+                ) : (
+                  <FaTrash size={12} />
+                )}
+                Remove
+              </button>
             </div>
           )}
           <div className="flex items-end gap-3">
@@ -318,10 +400,39 @@ export default function ProjectEditPage() {
           <h2 className="text-sm font-semibold text-white mb-4">
             Background Audio
           </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Plays as a looping ambient track across the whole tour. When no audio
+            is set, the viewer falls back to a default background track.
+            Uploading a new file replaces (and deletes) the old one.
+          </p>
+          <label className="flex items-center gap-2 text-xs text-gray-300 mb-4 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!project?.settings?.globalBackgroundAudio?.disabled}
+              disabled={audioDisabling}
+              onChange={(e) => handleToggleAudioDisabled(e.target.checked)}
+              className="accent-blue-600"
+            />
+            Silent tour — play no background audio (not even the default track)
+          </label>
           {project?.settings?.globalBackgroundAudio?.src && (
-            <p className="text-xs text-green-400 mb-3 break-all">
-              Current: {project.settings.globalBackgroundAudio.src}
-            </p>
+            <div className="flex items-center gap-3 mb-3">
+              <p className="text-xs text-green-400 break-all flex-1">
+                Current: {project.settings.globalBackgroundAudio.src}
+              </p>
+              <button
+                onClick={handleAudioRemove}
+                disabled={audioRemoving}
+                className="admin-btn-secondary flex items-center gap-2 text-xs flex-shrink-0"
+              >
+                {audioRemoving ? (
+                  <FaSyncAlt size={12} className="animate-spin" />
+                ) : (
+                  <FaTrash size={12} />
+                )}
+                Remove
+              </button>
+            </div>
           )}
           <div className="flex items-end gap-3">
             <div className="flex-1">

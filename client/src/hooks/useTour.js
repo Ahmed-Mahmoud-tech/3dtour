@@ -9,6 +9,15 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 // defines the same keys — see vite.config.js.)
 const IS_STATIC = process.env.NEXT_PUBLIC_STATIC_TOUR === "1";
 
+// When a tour has no owner-set background track, the hosted viewer plays this
+// default ambient loop (served from client/public/music/, mapped to /music).
+// Not applied in the self-hosted static export: it runs from an arbitrary
+// sub-path where an absolute "/music/..." URL wouldn't resolve, and a delivered
+// tour should only play audio the owner explicitly bundled.
+const DEFAULT_BACKGROUND_AUDIO_URL = IS_STATIC
+  ? ""
+  : "/music/quiet-reflections.mp3";
+
 // Pre-play preload: the start node + its 7 nearest nodes by graph distance —
 // panoramas AND their transition videos — must be cached before the tour is
 // shown; everything else loads in the background afterwards.
@@ -144,9 +153,12 @@ export function useTour(projectId) {
 
   // ─── Background audio management ───────────────────────────────────────────
   useEffect(() => {
-    const audioSrc = project?.settings?.globalBackgroundAudio?.src;
-    const defaultVolume =
-      project?.settings?.globalBackgroundAudio?.defaultVolume ?? 0.4;
+    const audioCfg = project?.settings?.globalBackgroundAudio;
+    // Explicit "silent tour" opt-out: no audio at all, not even the default.
+    if (audioCfg?.disabled) return;
+
+    const audioSrc = audioCfg?.src || DEFAULT_BACKGROUND_AUDIO_URL;
+    const defaultVolume = audioCfg?.defaultVolume ?? 0.4;
 
     if (!audioSrc) return;
 

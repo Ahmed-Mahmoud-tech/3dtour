@@ -12,13 +12,18 @@ const SPHERE_RADIUS = 50;
 // A flat disc pinned at the bottom of the scene to hide the robot/tripod that
 // carries the camera. Shows the project's client logo when set; falls back to
 // the Gateverse logo (served from client/public/, Vite maps it to "/").
-const DEFAULT_NADIR_LOGO_URL = "/gateverse-logo.png";
+const DEFAULT_NADIR_LOGO_URL = "/gateverse-logo-v2.png";
 // Half-angle (degrees, measured from straight down) the disc must cover.
 // Bigger = wider patch. ~25–30° hides a typical tripod/robot footprint.
 const NADIR_COVER_DEG = 28;
 // How far below the camera the disc sits. Must be well inside the sphere
 // radius so it always renders in front of panorama/video spheres.
 const NADIR_Y = -20;
+// Clicking the nadir logo sends the viewer to the Gateverse landing page.
+// Disabled in the self-hosted static export — it has no landing page bundled
+// and runs from an arbitrary sub-path, so "/" would 404 / leave the tour.
+const IS_STATIC = process.env.NEXT_PUBLIC_STATIC_TOUR === "1";
+const LANDING_URL = "/";
 
 // ─── Progressive equirectangular texture loader ──────────────────────────────
 // Loads the tiny preview first (decodes in ~ms, shows instantly), then swaps
@@ -675,28 +680,36 @@ function VideoSphere({
 // (e.g. the file was deleted), it falls back to the default Gateverse logo.
 function NadirLogo({ url }) {
   const [texture, setTexture] = useState(null);
+  // Whether the patch is currently showing the default Gateverse logo (no
+  // client logo set, or it failed to load). Only the default logo links to
+  // the landing page — a client's own custom logo must not redirect off-brand.
+  const [showingDefault, setShowingDefault] = useState(!url);
 
   useEffect(() => {
     let alive = true;
     let tex = null;
     const loader = new THREE.TextureLoader();
 
-    const apply = (loaded) => {
+    const apply = (loaded, isDefault) => {
       if (!alive) return loaded.dispose();
       loaded.colorSpace = THREE.SRGBColorSpace;
       tex = loaded;
       setTexture(loaded);
+      setShowingDefault(isDefault);
       invalidate(); // demand-mode loop: render the newly loaded patch
     };
 
     const loadDefault = () =>
-      loader.load(DEFAULT_NADIR_LOGO_URL, apply, undefined, () =>
-        console.error("Nadir logo failed to load:", DEFAULT_NADIR_LOGO_URL),
+      loader.load(
+        DEFAULT_NADIR_LOGO_URL,
+        (t) => apply(t, true),
+        undefined,
+        () => console.error("Nadir logo failed to load:", DEFAULT_NADIR_LOGO_URL),
       );
 
     if (url) {
       // Client logo missing/broken → fall back to the default logo
-      loader.load(url, apply, undefined, loadDefault);
+      loader.load(url, (t) => apply(t, false), undefined, loadDefault);
     } else {
       loadDefault();
     }
@@ -708,14 +721,40 @@ function NadirLogo({ url }) {
     };
   }, [url]);
 
+  // Reset the hover cursor if the patch unmounts while hovered.
+  useEffect(() => () => {
+    if (typeof document !== "undefined") document.body.style.cursor = "";
+  }, []);
+
   if (!texture) return null;
 
   // Disc radius that covers NADIR_COVER_DEG from straight down at height NADIR_Y
   const radius =
     Math.abs(NADIR_Y) * Math.tan(THREE.MathUtils.degToRad(NADIR_COVER_DEG));
 
+  // The Gateverse logo links to the landing page; a client's custom logo does
+  // not, and neither does the static export (no landing bundled).
+  const linksToLanding = showingDefault && !IS_STATIC;
+
+  const goToLanding = (e) => {
+    e.stopPropagation();
+    document.body.style.cursor = "";
+    // New tab so the viewer keeps their place in the tour.
+    window.open(LANDING_URL, "_blank", "noopener,noreferrer");
+  };
+
   return (
-    <mesh position={[0, NADIR_Y - 25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+    <mesh
+      position={[0, NADIR_Y - 25, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      onClick={linksToLanding ? goToLanding : undefined}
+      onPointerOver={
+        linksToLanding ? () => (document.body.style.cursor = "pointer") : undefined
+      }
+      onPointerOut={
+        linksToLanding ? () => (document.body.style.cursor = "") : undefined
+      }
+    >
       <circleGeometry args={[radius - 5, 64]} />
       <meshBasicMaterial map={texture} transparent />
     </mesh>
