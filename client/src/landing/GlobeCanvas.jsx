@@ -47,11 +47,18 @@ const prefersReducedMotion =
 function Marble({ textureUrl, spinRef }) {
   const groupRef = useRef();
   const texture = useLoader(THREE.TextureLoader, textureUrl);
+  const { gl } = useThree();
 
   useMemo(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
-  }, [texture]);
+    // Max anisotropy matters a lot here: the sphere's silhouette shows the
+    // texture at a grazing angle, which is exactly where low anisotropy smears.
+    texture.anisotropy = gl.capabilities.getMaxAnisotropy();
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = true;
+    texture.needsUpdate = true;
+  }, [texture, gl]);
 
   const fresnelMaterial = useMemo(
     () =>
@@ -81,8 +88,18 @@ function Marble({ textureUrl, spinRef }) {
   return (
     <group ref={groupRef}>
       <mesh>
-        <sphereGeometry args={[1, 64, 64]} />
-        <meshStandardMaterial map={texture} roughness={0.4} metalness={0.05} />
+        <sphereGeometry args={[1, 96, 96]} />
+        {/* Fully rough + non-metal so the key light can't blow a specular
+            hotspot over the photo; the emissive map keeps the unlit side
+            legible instead of crushing it to black. */}
+        <meshStandardMaterial
+          map={texture}
+          roughness={1}
+          metalness={0}
+          emissiveMap={texture}
+          emissive="#ffffff"
+          emissiveIntensity={0.45}
+        />
       </mesh>
       <mesh material={fresnelMaterial} scale={1.02}>
         <sphereGeometry args={[1, 48, 48]} />
@@ -181,14 +198,19 @@ export default function GlobeCanvas({ textureUrl, particles = false, className =
   return (
     <Canvas
       className={className}
-      dpr={[1, 1.75]}
+      dpr={[1, 2]}
       camera={{ position: [0, 0, 3.1], fov: 45 }}
       gl={{ antialias: true, alpha: true }}
+      // ACES (R3F's default) desaturates and flattens the panorama; the marble
+      // is a photo, so render it straight.
+      onCreated={({ gl }) => {
+        gl.toneMapping = THREE.NoToneMapping;
+      }}
       style={{ cursor: 'grab', background: 'transparent' }}
     >
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[3, 2, 4]} intensity={1.4} color="#ffffff" />
-      <pointLight position={[-4, -1, -3]} intensity={2.2} color="#10c9b7" />
+      <ambientLight intensity={1.15} />
+      <directionalLight position={[3, 2, 4]} intensity={0.85} color="#ffffff" />
+      <pointLight position={[-4, -1, -3]} intensity={1.1} color="#10c9b7" />
       <Suspense fallback={null}>
         <Marble textureUrl={textureUrl} spinRef={spinRef} />
       </Suspense>

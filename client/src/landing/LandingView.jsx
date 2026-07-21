@@ -53,8 +53,8 @@ function GlobeFallback() {
 
 function SectionHeading({ eyebrow, title, sub }) {
   return (
-    <Reveal className="max-w-2xl">
-      <p className="text-brand text-sm font-semibold tracking-[0.25em] uppercase mb-3">
+    <Reveal className="max-w-4xl">
+      <p className="text-brand text-xl font-semibold tracking-[0.25em] uppercase mb-3">
         {eyebrow}
       </p>
       <h2 className="text-3xl sm:text-5xl font-extrabold text-white leading-tight">
@@ -93,7 +93,7 @@ function Logo() {
         <circle cx="24.5" cy="9.5" r="1.8" fill="#3ef0dd" />
       </svg>
       <span className="text-xl font-extrabold tracking-tight text-white">
-        gate<span className="text-brand">verse</span>
+        Gate<span className="text-brand">verse</span>
       </span>
     </span>
   );
@@ -207,7 +207,7 @@ function Hero({ t, lang }) {
       <div className="relative mx-auto max-w-7xl px-5 sm:px-8 pt-10 pb-16 lg:pt-16 lg:pb-24 grid lg:grid-cols-2 gap-10 items-center">
         <div className="order-2 lg:order-1">
           <Reveal>
-            <p className="text-brand text-sm font-semibold tracking-[0.25em] uppercase mb-4">
+            <p className="text-brand text-xl font-semibold tracking-[0.25em] uppercase mb-4">
               {t.hero.eyebrow}
             </p>
           </Reveal>
@@ -237,7 +237,7 @@ function Hero({ t, lang }) {
                 <WhatsAppSvg />
                 {t.hero.ctaBook}
               </a>
-              <a
+              {/* <a
                 href={DEMO_TOUR_URL}
                 target="_blank"
                 rel="noreferrer"
@@ -246,7 +246,7 @@ function Hero({ t, lang }) {
               >
                 {t.hero.ctaDemo}
                 <ArrowSvg />
-              </a>
+              </a> */}
             </div>
           </Reveal>
           <Reveal delay={320}>
@@ -257,7 +257,7 @@ function Hero({ t, lang }) {
                   <dd className="text-2xl font-extrabold text-white">
                     {s.value}
                   </dd>
-                  <dd className="text-xs text-gray-500 mt-1 uppercase tracking-wider">
+                  <dd className="text-xs text-gray-400 mt-1 uppercase tracking-wider">
                     {s.label}
                   </dd>
                 </div>
@@ -275,7 +275,7 @@ function Hero({ t, lang }) {
               <GlobeCanvas textureUrl="/panos/hero.webp" particles />
             </Suspense>
           )}
-          <p className="absolute bottom-1 inset-x-0 text-center text-xs text-gray-500 tracking-widest uppercase pointer-events-none">
+          <p className="absolute bottom-1 inset-x-0 text-center text-xs text-gray-400 tracking-widest uppercase pointer-events-none">
             ↔ {t.hero.dragHint}
           </p>
         </div>
@@ -389,7 +389,7 @@ function Testimonials({ t }) {
   return (
     <section
       id="testimonials"
-      className="relative py-20 lg:py-28 bg-ink-900/60 border-y border-white/5"
+      className="relative py-20 lg:py-28 bg-[#10c9b70f] border-y border-white/5"
     >
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <SectionHeading
@@ -420,7 +420,7 @@ function Testimonials({ t }) {
                   <p className="text-white font-semibold text-sm">
                     {item.name}
                   </p>
-                  <p className="text-gray-500 text-xs mt-0.5">{item.role}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">{item.role}</p>
                 </figcaption>
               </figure>
             </Reveal>
@@ -467,6 +467,9 @@ function Pricing({ t, lang }) {
               <p className="mt-4 text-4xl font-extrabold text-brand">
                 {p.price}
               </p>
+              {p.renew && (
+                <p className="mt-1.5 text-sm text-gray-400">{p.renew}</p>
+              )}
               <ul className="mt-7 space-y-3 flex-1">
                 {p.features.map((f) => (
                   <li
@@ -506,10 +509,65 @@ function Pricing({ t, lang }) {
           </Reveal>
         ))}
       </div>
-      <Reveal delay={120}>
+
+      {(t.pricing.addons || t.pricing.own) && (
+        <Reveal delay={120}>
+          <div className="mt-8 grid lg:grid-cols-2 gap-6 items-start">
+            {t.pricing.addons && (
+              <div className="rounded-3xl border border-white/8 bg-ink-800/50 p-7 sm:p-8">
+                <h3 className="text-white font-bold text-lg">
+                  {t.pricing.addonsTitle}
+                </h3>
+                <ul className="mt-4">
+                  {t.pricing.addons.map((a) => (
+                    <li
+                      key={a.label}
+                      className="flex items-center justify-between gap-4 py-2.5 border-b border-white/5 last:border-0"
+                    >
+                      <span className="text-gray-300 text-sm">{a.label}</span>
+                      <span className="text-brand font-semibold text-sm whitespace-nowrap">
+                        {a.price}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {t.pricing.own && (
+              <div className="rounded-3xl border border-brand/25 bg-gradient-to-b from-brand/10 to-ink-800/60 p-7 sm:p-8">
+                <h3 className="text-white font-bold text-lg">
+                  {t.pricing.ownTitle}
+                </h3>
+                <div className="mt-5 space-y-5">
+                  {t.pricing.own.map((o) => (
+                    <div key={o.name}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="text-white font-bold">{o.name}</p>
+                        <p className="text-brand font-extrabold whitespace-nowrap">
+                          {o.price}
+                        </p>
+                      </div>
+                      {o.note && (
+                        <p className="text-gray-400 text-xs mt-0.5 uppercase tracking-wider">
+                          {o.note}
+                        </p>
+                      )}
+                      <p className="text-gray-400 text-sm mt-1.5 leading-relaxed">
+                        {o.desc}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </Reveal>
+      )}
+
+      <Reveal delay={160}>
         <div className="mt-10 text-center space-y-2">
           <p className="text-gray-400">{t.pricing.hostingNote}</p>
-          <p className="text-gray-500 text-sm">
+          <p className="text-gray-400 text-sm">
             <a
               href={waLink(lang)}
               target="_blank"
@@ -537,7 +595,7 @@ function How({ t }) {
   return (
     <section
       id="how"
-      className="relative py-20 lg:py-28 bg-ink-900/60 border-y border-white/5"
+      className="relative py-20 lg:py-28 bg-[#10c9b70f] border-y border-white/5"
     >
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <SectionHeading eyebrow={t.how.eyebrow} title={t.how.title} />
@@ -620,8 +678,8 @@ function ContactCta({ t, lang }) {
               {t.cta.email}
             </a>
           </div>
-          <p className="mt-8 text-sm text-gray-500">
-            {CONTACT.location[lang]}
+          <p className="mt-8 text-sm text-gray-400">
+            {/* {CONTACT.location[lang]} */}
             {t.cta.reply && <> · {t.cta.reply}</>}
           </p>
         </Reveal>
@@ -635,8 +693,8 @@ function Footer({ t }) {
     <footer className="border-t border-white/5 py-10">
       <div className="mx-auto max-w-7xl px-5 sm:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
         <Logo />
-        <p className="text-gray-500 text-sm">{t.footer.tagline}</p>
-        <p className="text-gray-600 text-xs">{t.footer.rights}</p>
+        <p className="text-gray-300 text-sm">{t.footer.tagline}</p>
+        <p className="text-gray-300 text-xs">{t.footer.rights}</p>
       </div>
     </footer>
   );
@@ -657,8 +715,8 @@ export default function LandingView({ lang = "en" }) {
       <main>
         <Hero t={t} lang={lang} />
         <Why t={t} />
-        <Portfolio t={t} lang={lang} />
-        <Testimonials t={t} />
+        {/* <Portfolio t={t} lang={lang} /> */}
+        {/* <Testimonials t={t} /> */}
         <Pricing t={t} lang={lang} />
         <How t={t} />
         <Sectors t={t} />
