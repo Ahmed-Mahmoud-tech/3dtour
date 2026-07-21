@@ -29,6 +29,17 @@ const escapeHtml = (s) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
   );
 
+// Inverse pair, used only to build the plain-text alternative of a rendered
+// line. `&amp;` must be decoded last or "&amp;lt;" would double-decode.
+const stripTags = (s) => String(s).replace(/<[^>]+>/g, '');
+const unescapeHtml = (s) =>
+  String(s)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+
 // One entry per supported owner language. `dir`/`locale` drive the HTML
 // wrapper; the copy functions take the escaped title + formatted date.
 const LOCALES = {
@@ -78,34 +89,48 @@ const ownerEmailContent = (key, rawTitle, expiresAt, lang = 'ar') => {
   const lead = L.lead(key, tourTitle, date);
 
   const align = L.dir === 'rtl' ? 'right' : 'left';
-  // The logo rides along as a CID attachment (see utils/mailer.js) so it shows
-  // even with remote images blocked. The wordmark stays LTR in both languages —
-  // it's a brand name, not translated text. `alt` covers image-off clients.
+  // Header = the brand lockup: planet mark + "Gate" (white) / "verse" (teal),
+  // the same split the site header uses (client/src/landing/LandingView.jsx).
+  // The mark is a CID attachment (see utils/mailer.js) so it renders even with
+  // remote images blocked; the wordmark is live HTML text rather than baked
+  // into the image, so it stays sharp on every screen and survives an
+  // images-off client. That white text needs the dark band behind it —
+  // bgcolor on the <td> (not a CSS background) is what Outlook honours.
+  // The lockup stays LTR in both languages: it's a brand name, not copy.
   const html = `
-  <div dir="${L.dir}" style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937;text-align:${align}">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px" dir="ltr">
+  <div dir="${L.dir}" style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2937">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse">
       <tr>
-        <td style="vertical-align:middle;padding-${L.dir === 'rtl' ? 'left' : 'right'}:10px">
-          <img src="cid:${LOGO_CID}" width="40" height="40" alt="Gateverse"
-               style="display:block;width:40px;height:40px;border:0;outline:none" />
+        <td bgcolor="#070d13" style="background-color:#070d13;padding:18px 24px" dir="ltr">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td style="vertical-align:middle;padding-right:10px">
+                <img src="cid:${LOGO_CID}" width="34" height="34" alt=""
+                     style="display:block;width:34px;height:34px;border:0;outline:none" />
+              </td>
+              <td style="vertical-align:middle;font-family:Arial,Helvetica,sans-serif;font-size:23px;font-weight:bold;letter-spacing:-0.2px;white-space:nowrap">
+                <span style="color:#ffffff">Gate</span><span style="color:#10c9b7">verse</span>
+              </td>
+            </tr>
+          </table>
         </td>
-        <td style="vertical-align:middle">
-          <span style="font-size:22px;font-weight:bold;color:#0d9488;letter-spacing:0.3px">Gateverse</span>
+      </tr>
+      <tr>
+        <td style="padding:24px;text-align:${align}">
+          <p style="font-size:15px;line-height:1.6;margin:0 0 14px">${lead}</p>
+          <p style="font-size:15px;line-height:1.6;margin:0">${L.cta}</p>
+          <p style="font-size:13px;color:#6b7280;margin:32px 0 0">${L.signature}</p>
         </td>
       </tr>
     </table>
-    <p style="font-size:15px;line-height:1.6">${lead}</p>
-    <p style="font-size:15px;line-height:1.6">${L.cta}</p>
-    <p style="font-size:13px;color:#6b7280;margin-top:32px">${L.signature}</p>
   </div>`;
 
-  // Plain-text alternative: drop the markup entirely (the <img> leaves nothing
-  // behind, so the text part opens on the actual message).
-  const text = html
-    .replace(/<img[^>]*>/g, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Plain-text alternative, built from the copy directly rather than scraped
+  // out of the HTML: the wordmark is two adjacent spans, so tag-stripping
+  // would emit "Gate verse", and the escaped title would leak "&amp;".
+  const text = ['Gateverse', '', unescapeHtml(stripTags(lead)), '', L.cta, '', L.signature].join(
+    '\n'
+  );
 
   return { subject, html, text };
 };

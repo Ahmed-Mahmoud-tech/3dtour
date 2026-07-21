@@ -18,6 +18,9 @@ server/uploads/
 # Local backup output (see ops/backup)
 backups/
 
+# نسخ العقود الجاهزة للطباعة (مولّدة بـ contracts/build-print.mjs)
+contracts/print/
+
 # OS / editor
 .DS_Store
 Thumbs.db

@@ -51,26 +51,30 @@ try {
   console.log('  logo       :', `MISSING at ${logoPath} — emails would fail to send`);
 }
 
-if (!enabled) {
-  console.error('\nSet SMTP_USER and SMTP_PASS in server/.env, then re-run.');
+// Rendering the templates needs no SMTP, so --preview still works on a dev
+// box with no credentials; only an actual send requires them.
+if (!enabled && sendTo) {
+  console.error('\nCannot send: set SMTP_USER and SMTP_PASS in server/.env, then re-run.');
   process.exit(1);
 }
 
 // ── 2. SMTP handshake (no mail sent) ─────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host,
-  port,
-  secure: port === 465,
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-});
+if (enabled) {
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
 
-console.log('\n── SMTP handshake ───────────────────────────────');
-try {
-  await transporter.verify();
-  console.log('  OK — server accepted the credentials.');
-} catch (err) {
-  console.error('  FAILED —', err.message);
-  process.exit(1);
+  console.log('\n── SMTP handshake ───────────────────────────────');
+  try {
+    await transporter.verify();
+    console.log('  OK — server accepted the credentials.');
+  } catch (err) {
+    console.error('  FAILED —', err.message);
+    process.exit(1);
+  }
 }
 
 // ── 3. Render the real templates ─────────────────────────────────────────────
@@ -100,8 +104,28 @@ if (preview) {
       const { subject, text } = ownerEmailContent(key, 'Demo Tour', at(), lang);
       console.log(`\n[${lang} / ${key}]`);
       console.log('  subject:', subject);
-      console.log('  body   :', text);
+      console.log('  body   :', text.replace(/\n/g, '\n           '));
     }
+  }
+
+  // Also drop the HTML to disk so the header/logo can be eyeballed in a
+  // browser. cid: images don't resolve outside a mail client, so swap in the
+  // real file for the preview only.
+  const out = argv.includes('--html') ? argv[argv.indexOf('--html') + 1] : null;
+  if (out) {
+    const parts = [];
+    for (const lang of ['ar', 'en']) {
+      for (const [key, at] of CASES) {
+        const { subject, html } = ownerEmailContent(key, 'Demo Tour', at(), lang);
+        parts.push(
+          `<p style="font:12px monospace;color:#888;margin:24px 0 4px">${lang}/${key} — ${subject}</p>`,
+          html.replace(`cid:${LOGO_CID}`, path.resolve(logoPath).replace(/\\/g, '/'))
+        );
+      }
+    }
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(out, `<body style="background:#e5e7eb;padding:20px">${parts.join('')}</body>`);
+    console.log(`\n  HTML preview written to ${out}`);
   }
 }
 
@@ -113,8 +137,15 @@ if (sendTo) {
   for (const lang of ['ar', 'en']) {
     for (const [key, at] of CASES) {
       const { subject, html, text } = ownerEmailContent(key, 'Test Tour', at(), lang);
-      await sendMail({ to: sendTo, subject: `[TEST ${lang}/${key}] ${subject}`, html, text });
-      console.log(`  sent  ${lang}/${key}`);
+      const info = await sendMail({
+        to: sendTo,
+        subject: `[TEST ${lang}/${key}] ${subject}`,
+        html,
+        text,
+      });
+      // Print the relay's id — "accepted" is not "delivered", and this is the
+      // handle for finding the message in the Brevo transactional log.
+      console.log(`  sent  ${lang}/${key}`.padEnd(24), info.messageId, '|', info.response);
     }
   }
   console.log(`\n  ${2 * CASES.length} emails delivered. Check the inbox:`);

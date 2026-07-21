@@ -18,6 +18,15 @@ const FROM =
   process.env.EMAIL_FROM ||
   (process.env.NODE_ENV === 'production' ? PROD_FROM : DEV_FROM);
 
+// Every reminder tells the client to "just reply to this email". gateverse.net
+// has no MX record, so a reply to the From address bounces — set
+// EMAIL_REPLY_TO to a mailbox that actually receives (e.g. the team Gmail)
+// and the reply lands somewhere real. Unset = replies go nowhere.
+const REPLY_TO = process.env.EMAIL_REPLY_TO || '';
+if (!REPLY_TO) {
+  console.warn('[mailer] EMAIL_REPLY_TO not set — client replies to reminders may bounce');
+}
+
 let transporter = null;
 
 if (process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -62,20 +71,25 @@ const logoAttachment = () => ({
 });
 
 /**
- * Returns true when the message was handed to the SMTP server; false when
- * the mailer is disabled. SMTP errors propagate to the caller.
+ * Returns `{ messageId, response }` once the relay has accepted the message,
+ * or `false` when the mailer is disabled. SMTP errors propagate to the caller.
+ * NOTE: acceptance is not delivery — the relay can still bounce or spam-file
+ * it afterwards, which is what the messageId is for.
  * The brand logo is attached automatically — reference it in `html` as
  * <img src="cid:gateverse-logo">. Pass `logo: false` to omit it.
  */
 export async function sendMail({ to, subject, html, text, logo = true }) {
   if (!transporter) return false;
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: FROM,
     to,
     subject,
     html,
     text,
+    ...(REPLY_TO ? { replyTo: REPLY_TO } : {}),
     ...(logo && logoExists ? { attachments: [logoAttachment()] } : {}),
   });
-  return true;
+  // The relay's queue id — the handle to look a message up in the Brevo log
+  // when a client says a reminder never arrived.
+  return { messageId: info.messageId, response: info.response };
 }
