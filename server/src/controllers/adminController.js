@@ -32,6 +32,57 @@ const pageParams = (req, defLimit = 10) => ({
   limit: Math.min(Math.max(parseInt(req.query.limit, 10) || defLimit, 1), 100),
 });
 
+// ─── Subscription-state buckets (?sub= on GET /owners) ───────────────────────
+// Disjoint and ordered by urgency, so every subscription lands in exactly one:
+//   active  — comfortably running, more than a month left
+//   month   — 7 to 30 days left
+//   week    — under 7 days left (the reminder window)
+//   expired — past expiresAt, or canceled by an admin
+//   none    — the owner has no tour carrying a subscription at all
+// A client with several tours matches a bucket if ANY of their tours does,
+// so "expiring this week" surfaces them even when their other tours are fine.
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const SUB_BUCKETS = ['active', 'month', 'week', 'expired', 'none'];
+
+const subscriptionBucketFilter = (bucket, now = new Date()) => {
+  const inDays = (n) => new Date(now.getTime() + n * DAY_MS);
+  switch (bucket) {
+    case 'active':
+      return { status: 'active', expiresAt: { $gt: inDays(30) } };
+    case 'month':
+      return { status: 'active', expiresAt: { $gt: inDays(7), $lte: inDays(30) } };
+    case 'week':
+      return { status: 'active', expiresAt: { $gt: now, $lte: inDays(7) } };
+    case 'expired':
+      return { $or: [{ expiresAt: { $lte: now } }, { status: 'canceled' }] };
+    default:
+      return null;
+  }
+};
+
+/**
+ * Narrows a user filter to owners whose tours match a subscription bucket.
+ * Returns the filter unchanged when no (or an unknown) bucket is requested.
+ */
+const applySubBucket = async (filter, bucket) => {
+  if (!bucket || !SUB_BUCKETS.includes(bucket)) return filter;
+
+  if (bucket === 'none') {
+    // Owners with no subscribed tour: every project of theirs lacks a
+    // subscription row (covers "no tours at all" too).
+    const subscribed = await Subscription.find().distinct('project');
+    const ownersWithSub = await Project.find({ _id: { $in: subscribed } }).distinct('owner');
+    return { ...filter, _id: { $nin: ownersWithSub.filter(Boolean) } };
+  }
+
+  const projectIds = await Subscription.find(subscriptionBucketFilter(bucket)).distinct('project');
+  const ownerIds = (await Project.find({ _id: { $in: projectIds } }).distinct('owner')).filter(
+    Boolean
+  );
+  return { ...filter, _id: { $in: ownerIds } };
+};
+
 // POST /api/admin/owners
 // Creates a tour-owner account with an admin-assigned password.
 // Subscriptions are per PROJECT, not per owner — they're created when a tour
@@ -65,7 +116,9 @@ export const createOwner = asyncHandler(async (req, res) => {
 // Lists owners with their assigned tours; each tour carries its own
 // subscription (subscriptions are per project).
 export const listOwners = asyncHandler(async (req, res) => {
-  const filter = userSearchFilter('owner', req.query.q);
+  // ?sub= narrows to owners with a tour in that subscription bucket; it
+  // composes with ?q, so "search + expiring this week" works.
+  const filter = await applySubBucket(userSearchFilter('owner', req.query.q), req.query.sub);
   const { paginated, page, limit } = pageParams(req);
 
   // .lean() bypasses the model's toJSON, so exclude the hash explicitly

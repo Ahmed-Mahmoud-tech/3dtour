@@ -1,6 +1,6 @@
 import Subscription from '../models/Subscription.js';
 import Notification from '../models/Notification.js';
-import { sendMail, mailerEnabled } from '../utils/mailer.js';
+import { sendMail, mailerEnabled, LOGO_CID } from '../utils/mailer.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const CHECK_INTERVAL = 60 * 60 * 1000; // hourly; remindersSent dedups
@@ -78,15 +78,31 @@ const ownerEmailContent = (key, rawTitle, expiresAt, lang = 'ar') => {
   const lead = L.lead(key, tourTitle, date);
 
   const align = L.dir === 'rtl' ? 'right' : 'left';
+  // The logo rides along as a CID attachment (see utils/mailer.js) so it shows
+  // even with remote images blocked. The wordmark stays LTR in both languages —
+  // it's a brand name, not translated text. `alt` covers image-off clients.
   const html = `
   <div dir="${L.dir}" style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937;text-align:${align}">
-    <h2 style="color:#0d9488;margin:0 0 16px" dir="ltr">Gateverse</h2>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px" dir="ltr">
+      <tr>
+        <td style="vertical-align:middle;padding-${L.dir === 'rtl' ? 'left' : 'right'}:10px">
+          <img src="cid:${LOGO_CID}" width="40" height="40" alt="Gateverse"
+               style="display:block;width:40px;height:40px;border:0;outline:none" />
+        </td>
+        <td style="vertical-align:middle">
+          <span style="font-size:22px;font-weight:bold;color:#0d9488;letter-spacing:0.3px">Gateverse</span>
+        </td>
+      </tr>
+    </table>
     <p style="font-size:15px;line-height:1.6">${lead}</p>
     <p style="font-size:15px;line-height:1.6">${L.cta}</p>
     <p style="font-size:13px;color:#6b7280;margin-top:32px">${L.signature}</p>
   </div>`;
 
+  // Plain-text alternative: drop the markup entirely (the <img> leaves nothing
+  // behind, so the text part opens on the actual message).
   const text = html
+    .replace(/<img[^>]*>/g, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

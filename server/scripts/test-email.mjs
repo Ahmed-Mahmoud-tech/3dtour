@@ -10,10 +10,13 @@
  * read-only, so it is safe to run against production.
  */
 import 'dotenv/config';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import nodemailer from 'nodemailer';
+// The real send path, so a test exercises the same code production runs
+// (including the CID logo attachment).
+import { sendMail, mailerEnabled, LOGO_CID } from '../src/utils/mailer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -36,7 +39,17 @@ console.log('  host:port  :', `${host}:${port}`, `(secure=${port === 465})`);
 console.log('  SMTP_USER  :', enabled ? 'set' : 'MISSING');
 console.log('  SMTP_PASS  :', process.env.SMTP_PASS ? 'set' : 'MISSING');
 console.log('  From       :', from);
-console.log('  mailer     :', enabled ? 'ENABLED' : 'DISABLED (reminders will not email)');
+console.log('  mailer     :', mailerEnabled() ? 'ENABLED' : 'DISABLED (reminders will not email)');
+
+// The logo is attached from disk at send time — a missing file throws mid-send
+// and loses the reminder, so check it up front.
+const logoPath = path.join(__dirname, '../src/assets/email-logo.png');
+try {
+  const { size } = await stat(logoPath);
+  console.log('  logo       :', `OK (${size} bytes, cid:${LOGO_CID})`);
+} catch {
+  console.log('  logo       :', `MISSING at ${logoPath} — emails would fail to send`);
+}
 
 if (!enabled) {
   console.error('\nSet SMTP_USER and SMTP_PASS in server/.env, then re-run.');
@@ -63,11 +76,11 @@ try {
 // ── 3. Render the real templates ─────────────────────────────────────────────
 // ownerEmailContent is module-private, so load the job source with its imports
 // stripped rather than duplicating the copy here (it would drift).
-const jobSrc = (
-  await readFile(path.join(__dirname, '../src/jobs/subscriptionReminders.js'), 'utf8')
-)
-  .replace(/^import .*$/gm, '')
-  .concat('\nexport { ownerEmailContent };\n');
+const jobSrc = `const LOGO_CID = ${JSON.stringify(LOGO_CID)};\n`.concat(
+  (await readFile(path.join(__dirname, '../src/jobs/subscriptionReminders.js'), 'utf8'))
+    .replace(/^import .*$/gm, '')
+    .concat('\nexport { ownerEmailContent };\n')
+);
 
 const { ownerEmailContent } = await import(
   'data:text/javascript;base64,' + Buffer.from(jobSrc, 'utf8').toString('base64')
@@ -94,13 +107,19 @@ if (preview) {
 
 // ── 4. Optional real send ────────────────────────────────────────────────────
 if (sendTo) {
-  console.log(`\n── sending a real test email to ${sendTo} ───────`);
+  console.log(`\n── sending real test emails to ${sendTo} ───────`);
+  // One per language × threshold, so every template gets eyeballed in a
+  // real client. Goes through sendMail() — same path as the hourly job.
   for (const lang of ['ar', 'en']) {
-    const { subject, html, text } = ownerEmailContent('expiry_7d', 'Test Tour', CASES[0][1](), lang);
-    await transporter.sendMail({ from, to: sendTo, subject: `[TEST ${lang}] ${subject}`, html, text });
-    console.log(`  sent (${lang}).`);
+    for (const [key, at] of CASES) {
+      const { subject, html, text } = ownerEmailContent(key, 'Test Tour', at(), lang);
+      await sendMail({ to: sendTo, subject: `[TEST ${lang}/${key}] ${subject}`, html, text });
+      console.log(`  sent  ${lang}/${key}`);
+    }
   }
-  console.log('  Check the inbox — Arabic should render right-to-left.');
+  console.log(`\n  ${2 * CASES.length} emails delivered. Check the inbox:`);
+  console.log('   - the Gateverse logo should show in the header (no "load images" prompt)');
+  console.log('   - Arabic copy should read right-to-left with Latin-digit dates');
 } else {
   console.log('\nNo mail was sent. Pass --send <address> to deliver a real test.');
 }

@@ -80,6 +80,25 @@ const parseLatLng = (raw) => {
 const mapsUrl = (loc) =>
   `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
 
+// Subscription buckets — must match SUB_BUCKETS in server/src/controllers/
+// adminController.js. A client matches if ANY of their tours is in the bucket.
+const SUB_FILTERS = [
+  { value: "", label: "All" },
+  { value: "active", label: "On plan", hint: "More than a month left" },
+  { value: "month", label: "< 1 month", hint: "7–30 days left" },
+  { value: "week", label: "< 1 week", hint: "Under 7 days left" },
+  { value: "expired", label: "Expired", hint: "Past expiry or canceled" },
+  { value: "none", label: "No plan", hint: "No tour with a subscription" },
+];
+
+const SUB_FILTER_STYLE = {
+  active: "bg-emerald-900/40 text-emerald-300 border-emerald-700",
+  month: "bg-blue-900/40 text-blue-300 border-blue-700",
+  week: "bg-amber-900/40 text-amber-300 border-amber-700",
+  expired: "bg-red-900/40 text-red-300 border-red-700",
+  none: "bg-gray-800 text-gray-300 border-gray-600",
+};
+
 // The public viewer app (client/), where the owner dashboard lives.
 const VIEWER_URL = import.meta.env.VITE_VIEWER_URL || "http://localhost:5173";
 
@@ -283,13 +302,19 @@ export default function ClientsPage() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
+  const [subFilter, setSubFilter] = useState("");
   const [page, setPage] = useState(1);
   const q = useDebounced(search);
 
   const refresh = async (targetPage = page) => {
     setLoading(true);
     try {
-      const data = await adminApi.listOwners({ q, page: targetPage, limit: PAGE_SIZE });
+      const data = await adminApi.listOwners({
+        q,
+        sub: subFilter || undefined,
+        page: targetPage,
+        limit: PAGE_SIZE,
+      });
       setOwners(data.items);
       setPageInfo({ total: data.total, page: data.page, pages: data.pages });
     } catch (err) {
@@ -299,14 +324,15 @@ export default function ClientsPage() {
     }
   };
 
+  // Changing the query or the bucket invalidates the current page number
   useEffect(() => {
     setPage(1);
-  }, [q]);
+  }, [q, subFilter]);
 
   useEffect(() => {
     refresh(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, page]);
+  }, [q, subFilter, page]);
 
   // Unassigned projects for the assign picker — fetched on demand, searchable
   const fetchAssignableProjects = useCallback(
@@ -470,8 +496,29 @@ export default function ClientsPage() {
           value={search}
           onChange={setSearch}
           placeholder="Search clients by name or email…"
-          className="mb-6 max-w-sm"
+          className="mb-3 max-w-sm"
         />
+
+        {/* Filter by where the client's tours sit in the billing cycle */}
+        <div className="flex flex-wrap items-center gap-2 mb-6">
+          {SUB_FILTERS.map((f) => {
+            const on = subFilter === f.value;
+            return (
+              <button
+                key={f.value || "all"}
+                onClick={() => setSubFilter(f.value)}
+                title={f.hint}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  on
+                    ? SUB_FILTER_STYLE[f.value] || "bg-blue-900/40 text-blue-300 border-blue-700"
+                    : "border-gray-800 text-gray-500 hover:text-gray-300 hover:border-gray-700"
+                }`}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
 
         {/* Create form */}
         {creating && (
@@ -595,8 +642,12 @@ export default function ClientsPage() {
           <div className="text-center py-20 text-gray-600">
             <FaGlobe size={48} className="mx-auto mb-4 opacity-30" />
             <p>
-              {q
-                ? `No clients match “${q}”.`
+              {q || subFilter
+                ? `No clients match ${q ? `“${q}”` : "this filter"}${
+                    subFilter
+                      ? ` in “${SUB_FILTERS.find((f) => f.value === subFilter)?.label}”`
+                      : ""
+                  }.`
                 : "No clients yet. Create a tour owner account for your first client."}
             </p>
           </div>
