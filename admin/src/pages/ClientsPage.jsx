@@ -21,9 +21,64 @@ import {
   FaCalendarPlus,
   FaLink,
   FaChartBar,
+  FaPhone,
+  FaLanguage,
+  FaMapMarkerAlt,
+  FaRegStickyNote,
+  FaPen,
 } from "react-icons/fa";
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
+
+// Owner language drives the language of the subscription-reminder emails
+// the server sends (see server/src/jobs/subscriptionReminders.js).
+const LANGS = [
+  { value: "ar", label: "العربية" },
+  { value: "en", label: "English" },
+];
+const EMPTY_FORM = {
+  name: "",
+  email: "",
+  password: "",
+  phone: "",
+  language: "ar",
+  address: "",
+  lat: "",
+  lng: "",
+  notes: "",
+};
+
+// The form keeps lat/lng as separate strings so the inputs can be blank;
+// the API wants one {lat,lng} object, or null when the pin is unset.
+// Both halves must be filled — a lone coordinate is not a location.
+const toLocation = (lat, lng) => {
+  const a = String(lat ?? "").trim();
+  const b = String(lng ?? "").trim();
+  if (!a && !b) return null;
+  if (!a || !b) throw new Error("Enter both latitude and longitude, or leave both blank.");
+  const nLat = Number(a);
+  const nLng = Number(b);
+  if (!Number.isFinite(nLat) || !Number.isFinite(nLng))
+    throw new Error("Latitude and longitude must be numbers.");
+  if (nLat < -90 || nLat > 90) throw new Error("Latitude must be between -90 and 90.");
+  if (nLng < -180 || nLng > 180) throw new Error("Longitude must be between -180 and 180.");
+  return { lat: nLat, lng: nLng };
+};
+
+// Accepts a Google Maps URL or a plain "lat, lng" paste and pulls the pin out.
+// Admins copy links from Maps far more often than they type coordinates.
+const parseLatLng = (raw) => {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  const m =
+    s.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || // .../@30.04,31.23,17z
+    s.match(/[?&]q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) || // ...?q=30.04,31.23
+    s.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/); // "30.04, 31.23"
+  return m ? { lat: m[1], lng: m[2] } : null;
+};
+
+const mapsUrl = (loc) =>
+  `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
 
 // The public viewer app (client/), where the owner dashboard lives.
 const VIEWER_URL = import.meta.env.VITE_VIEWER_URL || "http://localhost:5173";
@@ -55,6 +110,166 @@ function SubscriptionBadge({ sub }) {
   );
 }
 
+// Address / map pin / internal notes for one client. Collapsed by default so
+// the list stays scannable; `onSave` gets only the changed-on-submit payload.
+function ClientDetails({ owner, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const startEdit = () => {
+    setDraft({
+      phone: owner.phone || "",
+      address: owner.address || "",
+      lat: owner.location ? String(owner.location.lat) : "",
+      lng: owner.location ? String(owner.location.lng) : "",
+      notes: owner.notes || "",
+    });
+    setError("");
+    setOpen(true);
+  };
+
+  // Paste a Maps link (or "lat, lng") into either coord box and it fills both.
+  const handleCoordPaste = (e) => {
+    const hit = parseLatLng(e.clipboardData.getData("text"));
+    if (!hit) return;
+    e.preventDefault();
+    setDraft((d) => ({ ...d, lat: hit.lat, lng: hit.lng }));
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (saving) return;
+    setError("");
+    let location;
+    try {
+      location = toLocation(draft.lat, draft.lng);
+    } catch (err) {
+      setError(err.message);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({
+        phone: draft.phone.trim(),
+        address: draft.address.trim(),
+        location,
+        notes: draft.notes.trim(),
+      });
+      setOpen(false);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) {
+    const loc = owner.location;
+    return (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <FaPhone size={10} className="text-gray-600" />
+          <span dir="ltr">{owner.phone || "—"}</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <FaMapMarkerAlt size={11} className="text-gray-600" />
+          {owner.address || "—"}
+        </span>
+        {loc && (
+          <a
+            href={mapsUrl(loc)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-400 hover:text-blue-300"
+            dir="ltr"
+          >
+            {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}
+          </a>
+        )}
+        {owner.notes && (
+          <span
+            className="flex items-center gap-1.5 text-amber-500/80 max-w-xs truncate"
+            title={owner.notes}
+          >
+            <FaRegStickyNote size={10} />
+            {owner.notes}
+          </span>
+        )}
+        <button
+          onClick={startEdit}
+          className="flex items-center gap-1 text-gray-500 hover:text-white"
+        >
+          <FaPen size={9} /> edit details
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2 border-t border-gray-800 pt-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <input
+          className="admin-input text-sm"
+          type="tel"
+          dir="ltr"
+          placeholder="Phone…"
+          value={draft.phone}
+          onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+        />
+        <input
+          className="admin-input text-sm"
+          placeholder="Address…"
+          value={draft.address}
+          onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+        />
+        <input
+          className="admin-input text-sm"
+          dir="ltr"
+          inputMode="decimal"
+          placeholder="Latitude (or paste a Maps link)…"
+          value={draft.lat}
+          onPaste={handleCoordPaste}
+          onChange={(e) => setDraft({ ...draft, lat: e.target.value })}
+        />
+        <input
+          className="admin-input text-sm"
+          dir="ltr"
+          inputMode="decimal"
+          placeholder="Longitude…"
+          value={draft.lng}
+          onPaste={handleCoordPaste}
+          onChange={(e) => setDraft({ ...draft, lng: e.target.value })}
+        />
+      </div>
+      <textarea
+        className="admin-input text-sm"
+        rows={2}
+        placeholder="Internal notes (never shown to the client)…"
+        value={draft.notes}
+        onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+      />
+      {error && <p className="text-red-400 text-xs">{error}</p>}
+      <div className="flex items-center gap-2">
+        <button type="submit" disabled={saving} className="admin-btn-primary text-xs py-1.5">
+          {saving ? "Saving…" : "Save details"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="admin-btn-secondary text-xs py-1.5"
+        >
+          Cancel
+        </button>
+        <span className="text-gray-600 text-xs ml-auto">
+          Tip: paste a Google Maps link into a coordinate box.
+        </span>
+      </div>
+    </form>
+  );
+}
+
 const PAGE_SIZE = 10;
 
 export default function ClientsPage() {
@@ -63,7 +278,7 @@ export default function ClientsPage() {
   const [pageInfo, setPageInfo] = useState({ total: 0, page: 1, pages: 1 });
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -103,11 +318,19 @@ export default function ClientsPage() {
   const handleCreate = async (e) => {
     e.preventDefault();
     if (submitting) return;
-    setSubmitting(true);
     setError("");
+    let location;
     try {
-      await adminApi.createOwner(form);
-      setForm({ name: "", email: "", password: "" });
+      location = toLocation(form.lat, form.lng);
+    } catch (err) {
+      setError(err.message);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { lat, lng, ...rest } = form;
+      await adminApi.createOwner({ ...rest, location });
+      setForm(EMPTY_FORM);
       setCreating(false);
       await refresh();
     } catch (err) {
@@ -145,6 +368,20 @@ export default function ClientsPage() {
     } catch (err) {
       window.alert(err.response?.data?.message || err.message);
     }
+  };
+
+  // Reminder emails follow this — flipping it changes the language of every
+  // future subscription reminder for this client.
+  const handleSetLanguage = async (owner, language) => {
+    if (language === (owner.language || "ar")) return;
+    await adminApi.updateOwner(owner._id, { language });
+    await refresh();
+  };
+
+  // Errors propagate so ClientDetails can show them inline instead of alert()
+  const handleSaveDetails = async (owner, payload) => {
+    await adminApi.updateOwner(owner._id, payload);
+    await refresh();
   };
 
   const handleToggleStatus = async (owner) => {
@@ -267,11 +504,66 @@ export default function ClientsPage() {
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
+              <input
+                className="admin-input"
+                type="tel"
+                dir="ltr"
+                placeholder="Phone (e.g. +20 100 123 4567)…"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
+              <select
+                className="admin-input"
+                value={form.language}
+                onChange={(e) => setForm({ ...form, language: e.target.value })}
+              >
+                {LANGS.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    Email language: {l.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="admin-input sm:col-span-2"
+                placeholder="Address (optional)…"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+              />
+              <input
+                className="admin-input"
+                dir="ltr"
+                inputMode="decimal"
+                placeholder="Latitude (or paste a Maps link)…"
+                value={form.lat}
+                onPaste={(e) => {
+                  const hit = parseLatLng(e.clipboardData.getData("text"));
+                  if (!hit) return;
+                  e.preventDefault();
+                  setForm((f) => ({ ...f, lat: hit.lat, lng: hit.lng }));
+                }}
+                onChange={(e) => setForm({ ...form, lat: e.target.value })}
+              />
+              <input
+                className="admin-input"
+                dir="ltr"
+                inputMode="decimal"
+                placeholder="Longitude (optional)…"
+                value={form.lng}
+                onChange={(e) => setForm({ ...form, lng: e.target.value })}
+              />
+              <textarea
+                className="admin-input sm:col-span-2"
+                rows={2}
+                placeholder="Internal notes (optional, never shown to the client)…"
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
             </div>
             <p className="text-gray-500 text-xs">
               The client logs in with this email/password and is forced to set a
-              new password on first login. Subscriptions are managed per tour
-              after you assign one.
+              new password on first login. Subscription reminder emails are sent
+              in the selected language. Subscriptions are managed per tour after
+              you assign one.
             </p>
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <div className="flex justify-end gap-3">
@@ -327,11 +619,37 @@ export default function ClientsPage() {
                         {owner.email} · created {fmtDate(owner.createdAt)} ·
                         last login {fmtDate(owner.lastLoginAt)}
                       </p>
+                      <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                        {/* Language of the subscription reminder emails */}
+                        <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                          <FaLanguage size={13} className="text-gray-600" />
+                          <select
+                            value={owner.language || "ar"}
+                            onChange={(e) =>
+                              handleSetLanguage(owner, e.target.value)
+                            }
+                            title="Language used for reminder emails"
+                            className="bg-gray-900 border border-gray-800 rounded px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
+                          >
+                            {LANGS.map((l) => (
+                              <option key={l.value} value={l.value}>
+                                {l.label}
+                              </option>
+                            ))}
+                          </select>
+                        </span>
+                      </div>
                     </div>
                     <span className="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400">
                       {owner.tours.length} tour{owner.tours.length === 1 ? "" : "s"}
                     </span>
                   </div>
+
+                  {/* Contact, venue location and internal notes */}
+                  <ClientDetails
+                    owner={owner}
+                    onSave={(payload) => handleSaveDetails(owner, payload)}
+                  />
 
                   {/* Tours */}
                   <div className="border-t border-gray-800 pt-3">

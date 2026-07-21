@@ -3,7 +3,11 @@ import nodemailer from 'nodemailer';
 // Outgoing email for subscription reminders. The From address is
 // environment-dependent: local/dev sends from the personal Gmail account,
 // production sends from the Gateverse domain mailbox. EMAIL_FROM overrides
-// both when set.
+// both when set (production does set it).
+//
+// Keep PROD_FROM on gateverse.NET: production relays through Brevo, which
+// rejects any sender outside the domain it has authenticated. A .tech/.com
+// address here silently fails every reminder.
 const DEV_FROM = 'Gateverse <ahmedmahmoudtech@gmail.com>';
 const PROD_FROM = 'Gateverse <contact@gateverse.net>';
 

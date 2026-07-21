@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
+import User, { selfView } from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const signToken = (id) =>
@@ -43,12 +43,12 @@ export const login = asyncHandler(async (req, res) => {
   await User.updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } });
 
   const token = signToken(user._id);
-  res.json({ token, user });
+  res.json({ token, user: selfView(user) });
 });
 
 // GET /api/auth/me
 export const getMe = async (req, res) => {
-  res.json(req.user);
+  res.json(selfView(req.user));
 };
 
 // PUT /api/auth/password

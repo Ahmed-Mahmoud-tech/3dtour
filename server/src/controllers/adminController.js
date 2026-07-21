@@ -37,7 +37,8 @@ const pageParams = (req, defLimit = 10) => ({
 // Subscriptions are per PROJECT, not per owner — they're created when a tour
 // is sold, via POST /api/admin/projects/:id/subscription.
 export const createOwner = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body; // validated + normalized
+  // validated + normalized
+  const { name, email, password, phone, language, address, location, notes } = req.body;
 
   const existing = await User.findOne({ email });
   if (existing) return res.status(409).json({ message: 'Email already registered' });
@@ -46,6 +47,12 @@ export const createOwner = asyncHandler(async (req, res) => {
     name,
     email,
     password,
+    phone: phone || '',
+    address: address || '',
+    location: location || null,
+    notes: notes || '',
+    // Falls back to the model default ('ar') when the admin didn't pick one
+    ...(language ? { language } : {}),
     role: 'owner',
     createdBy: req.user._id,
     mustChangePassword: true,
@@ -108,10 +115,17 @@ export const updateOwner = asyncHandler(async (req, res) => {
   const owner = await User.findOne({ _id: req.params.id, role: 'owner' });
   if (!owner) return res.status(404).json({ message: 'Owner not found' });
 
-  const { name, email, status } = req.body; // all optional, validated
+  // all optional, validated — `undefined` means "not submitted, leave alone",
+  // while '' / null are explicit clears.
+  const { name, email, status, phone, language, address, location, notes } = req.body;
   if (name) owner.name = name;
   if (email) owner.email = email;
   if (status) owner.status = status;
+  if (phone !== undefined) owner.phone = phone;
+  if (language) owner.language = language;
+  if (address !== undefined) owner.address = address;
+  if (location !== undefined) owner.location = location;
+  if (notes !== undefined) owner.notes = notes;
 
   try {
     await owner.save();
@@ -219,7 +233,7 @@ export const setSubscriptionStatus = asyncHandler(async (req, res) => {
 
 // POST /api/admin/employees
 export const createEmployee = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body; // validated + normalized
+  const { name, email, password, phone } = req.body; // validated + normalized
 
   const existing = await User.findOne({ email });
   if (existing) return res.status(409).json({ message: 'Email already registered' });
@@ -228,6 +242,7 @@ export const createEmployee = asyncHandler(async (req, res) => {
     name,
     email,
     password,
+    phone: phone || '',
     role: 'employee',
     createdBy: req.user._id,
   });
@@ -275,10 +290,11 @@ export const updateEmployee = asyncHandler(async (req, res) => {
   const employee = await User.findOne({ _id: req.params.id, role: 'employee' });
   if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
-  const { name, email, status } = req.body; // all optional, validated
+  const { name, email, status, phone } = req.body; // all optional, validated
   if (name) employee.name = name;
   if (email) employee.email = email;
   if (status) employee.status = status;
+  if (phone !== undefined) employee.phone = phone; // '' clears it
 
   try {
     await employee.save();

@@ -27,6 +27,40 @@ const objectIdOrNull = z
 const optionalName = z.string().trim().min(1, 'Name must not be blank').max(100).optional();
 const userStatus = z.enum(['active', 'suspended']).optional();
 
+// Contact phone: optional, blank allowed. Kept as free text (international
+// formats vary) but restricted to phone-ish characters so it can't smuggle
+// markup into the admin UI.
+const phone = z
+  .string()
+  .trim()
+  .max(30)
+  .optional()
+  .refine((v) => !v || /^[+\d][\d\s()-]{4,29}$/.test(v), 'Invalid phone number');
+
+// Preferred email language.
+const language = z.enum(['ar', 'en'], { message: 'language must be ar or en' }).optional();
+
+const address = z.string().trim().max(300).optional();
+
+// Internal admin notes about a client.
+const notes = z.string().trim().max(2000).optional();
+
+// Map pin. Accepts null (clears it) or {lat, lng}; numeric strings are coerced
+// so the admin form can post raw input. Both halves are required together —
+// a lone lat would silently store a wrong pin.
+const coord = (label, bound) =>
+  z.coerce
+    .number({ message: `${label} must be a number` })
+    .min(-bound, `${label} must be between -${bound} and ${bound}`)
+    .max(bound, `${label} must be between -${bound} and ${bound}`);
+
+const location = z
+  .union([
+    z.null(),
+    z.object({ lat: coord('lat', 90), lng: coord('lng', 180) }).strict(),
+  ])
+  .optional();
+
 // Auth ────────────────────────────────────────────────────────────────────────
 export const registerSchema = z.object({
   name: nonEmpty('Name').max(100),
@@ -50,12 +84,22 @@ export const createUserSchema = z.object({
   name: nonEmpty('Name').max(100),
   email,
   password,
+  phone,
+  language,
+  address,
+  location,
+  notes,
 });
 
 export const updateUserSchema = z.object({
   name: optionalName,
   email: email.optional(),
   status: userStatus,
+  phone,
+  language,
+  address,
+  location,
+  notes,
 });
 
 export const resetPasswordSchema = z.object({ password });

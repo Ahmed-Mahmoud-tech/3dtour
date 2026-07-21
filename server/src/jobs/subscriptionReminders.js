@@ -18,8 +18,10 @@ const THRESHOLDS = [
 // before this job existed (or while the server was down for weeks).
 const EXPIRED_BACKFILL_WINDOW = 14 * DAY;
 
-const fmtDate = (d) =>
-  new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+// Admin-facing dates (notifications) stay English; owner emails use the
+// locale matching the owner's chosen language.
+const fmtDate = (d, locale = 'en-GB') =>
+  new Date(d).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
 
 // Tour titles are staff-authored free text — escape before embedding in HTML
 const escapeHtml = (s) =>
@@ -27,30 +29,61 @@ const escapeHtml = (s) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
   );
 
-const ownerEmailContent = (key, rawTitle, expiresAt) => {
-  const date = fmtDate(expiresAt);
+// One entry per supported owner language. `dir`/`locale` drive the HTML
+// wrapper; the copy functions take the escaped title + formatted date.
+const LOCALES = {
+  en: {
+    dir: 'ltr',
+    locale: 'en-GB',
+    subject: (key, title, days) =>
+      key === 'expired'
+        ? `Your Gateverse tour subscription has expired — ${title}`
+        : key === 'expiry_1d'
+          ? `Your Gateverse tour subscription expires tomorrow — ${title}`
+          : `Your Gateverse tour subscription expires in ${days} days — ${title}`,
+    lead: (key, title, date) =>
+      key === 'expired'
+        ? `The subscription for your virtual tour <strong>${title}</strong> expired on <strong>${date}</strong>. Your tour stays online during a short grace period — please renew soon to avoid interruption.`
+        : `The subscription for your virtual tour <strong>${title}</strong> expires on <strong>${date}</strong>.`,
+    cta: `To renew your subscription, simply reply to this email or contact us and we'll take care of it.`,
+    signature: '— The Gateverse team',
+  },
+  ar: {
+    dir: 'rtl',
+    // -u-nu-latn keeps Latin digits (٢٨ → 28); Egyptian usage is Latin numerals
+    locale: 'ar-EG-u-nu-latn',
+    subject: (key, title, days) =>
+      key === 'expired'
+        ? `انتهى اشتراك جولتك على Gateverse — ${title}`
+        : key === 'expiry_1d'
+          ? `اشتراك جولتك على Gateverse ينتهي غدًا — ${title}`
+          : `اشتراك جولتك على Gateverse ينتهي خلال ${days} أيام — ${title}`,
+    lead: (key, title, date) =>
+      key === 'expired'
+        ? `انتهى اشتراك جولتك الافتراضية <strong>${title}</strong> بتاريخ <strong>${date}</strong>. جولتك ما زالت متاحة خلال فترة سماح قصيرة — برجاء التجديد قريبًا لتفادي توقف الخدمة.`
+        : `اشتراك جولتك الافتراضية <strong>${title}</strong> ينتهي بتاريخ <strong>${date}</strong>.`,
+    cta: `لتجديد الاشتراك، يكفي الرد على هذه الرسالة أو التواصل معنا وسنتولى الأمر.`,
+    signature: '— فريق Gateverse',
+  },
+};
+
+const ownerEmailContent = (key, rawTitle, expiresAt, lang = 'ar') => {
+  const L = LOCALES[lang] || LOCALES.ar;
+  const date = fmtDate(expiresAt, L.locale);
   const tourTitle = escapeHtml(rawTitle);
   const daysLeft = Math.max(Math.ceil((new Date(expiresAt) - Date.now()) / DAY), 0);
 
   // Subject is a plain-text header — use the raw title there
-  const subject =
-    key === 'expired'
-      ? `Your Gateverse tour subscription has expired — ${rawTitle}`
-      : key === 'expiry_1d'
-        ? `Your Gateverse tour subscription expires tomorrow — ${rawTitle}`
-        : `Your Gateverse tour subscription expires in ${daysLeft} days — ${rawTitle}`;
+  const subject = L.subject(key, rawTitle, daysLeft);
+  const lead = L.lead(key, tourTitle, date);
 
-  const lead =
-    key === 'expired'
-      ? `The subscription for your virtual tour <strong>${tourTitle}</strong> expired on <strong>${date}</strong>. Your tour stays online during a short grace period — please renew soon to avoid interruption.`
-      : `The subscription for your virtual tour <strong>${tourTitle}</strong> expires on <strong>${date}</strong>.`;
-
+  const align = L.dir === 'rtl' ? 'right' : 'left';
   const html = `
-  <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937">
-    <h2 style="color:#0d9488;margin:0 0 16px">Gateverse</h2>
+  <div dir="${L.dir}" style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937;text-align:${align}">
+    <h2 style="color:#0d9488;margin:0 0 16px" dir="ltr">Gateverse</h2>
     <p style="font-size:15px;line-height:1.6">${lead}</p>
-    <p style="font-size:15px;line-height:1.6">To renew your subscription, simply reply to this email or contact us and we'll take care of it.</p>
-    <p style="font-size:13px;color:#6b7280;margin-top:32px">— The Gateverse team</p>
+    <p style="font-size:15px;line-height:1.6">${L.cta}</p>
+    <p style="font-size:13px;color:#6b7280;margin-top:32px">${L.signature}</p>
   </div>`;
 
   const text = html
@@ -88,9 +121,10 @@ const processSubscription = async (sub) => {
       emailNote = `Email NOT sent to ${owner.email} (mailer not configured).`;
     } else {
       try {
-        const { subject, html, text } = ownerEmailContent(key, tourTitle, sub.expiresAt);
+        const lang = owner.language === 'en' ? 'en' : 'ar';
+        const { subject, html, text } = ownerEmailContent(key, tourTitle, sub.expiresAt, lang);
         await sendMail({ to: owner.email, subject, html, text });
-        emailNote = `Reminder email sent to ${owner.email}.`;
+        emailNote = `Reminder email sent to ${owner.email} (${lang}).`;
       } catch (err) {
         emailNote = `Email to ${owner.email} FAILED: ${err.message}`;
         console.error(`[subscriptionReminders] email failed for sub ${sub._id}:`, err.message);
@@ -105,7 +139,11 @@ const processSubscription = async (sub) => {
     title: expired
       ? `Subscription expired: ${tourTitle}`
       : `Subscription expiring ${key === 'expiry_1d' ? 'tomorrow' : 'soon'}: ${tourTitle}`,
-    body: `${owner ? `Owner: ${owner.name} <${owner.email}>. ` : ''}Plan: ${sub.plan}. ${
+    body: `${
+      owner
+        ? `Owner: ${owner.name} <${owner.email}>${owner.phone ? ` · ${owner.phone}` : ''}. `
+        : ''
+    }Plan: ${sub.plan}. ${
       expired ? 'Expired' : 'Expires'
     } ${fmtDate(sub.expiresAt)}. ${emailNote}`,
     project: project?._id || null,
@@ -124,7 +162,7 @@ export const runSubscriptionReminders = async () => {
     }).populate({
       path: 'project',
       select: 'info.title owner',
-      populate: { path: 'owner', select: 'name email' },
+      populate: { path: 'owner', select: 'name email language phone' },
     });
 
     for (const sub of subs) {
