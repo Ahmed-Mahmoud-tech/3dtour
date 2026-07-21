@@ -5,7 +5,7 @@ import nodemailer from 'nodemailer';
 // production sends from the Gateverse domain mailbox. EMAIL_FROM overrides
 // both when set.
 const DEV_FROM = 'Gateverse <ahmedmahmoudtech@gmail.com>';
-const PROD_FROM = 'Gateverse <contact@gateverse.tech>';
+const PROD_FROM = 'Gateverse <contact@gateverse.net>';
 
 const FROM =
   process.env.EMAIL_FROM ||
