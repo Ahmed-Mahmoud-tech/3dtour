@@ -8,6 +8,14 @@ import { pickPanoramaUrl } from "../../utils/textureTier.js";
 
 const SPHERE_RADIUS = 50;
 
+// Fades below are frame-rate independent (step ∝ delta), so one long frame can
+// carry a fade from 0 straight to 1 and the cross-fade is never seen. That is
+// exactly what a warm cache produces: decoding the preloaded panorama stalls
+// the main thread right before the node switch, and the first frame after it
+// has a delta of several hundred ms. Cap the step at ~2 frames' worth so every
+// fade stays multi-frame no matter how bad the hitch.
+const MAX_FADE_STEP = 1 / 30;
+
 // ─── Nadir logo patch settings ───────────────────────────────────────────────
 // A flat disc pinned at the bottom of the scene to hide the robot/tripod that
 // carries the camera. Shows the project's client logo when set; falls back to
@@ -173,7 +181,8 @@ function PanoramaSphere({
       if (Math.abs(current - target) > 0.001) {
         // Smooth fade, frame-rate independent: delta*3 ≈ the old 0.05/frame
         // at 60 fps, but identical pacing at 30 or 120 Hz.
-        opacityRef.current += (target - current) * Math.min(1, delta * 3);
+        opacityRef.current +=
+          (target - current) * Math.min(delta, MAX_FADE_STEP) * 3;
         matRef.current.opacity = opacityRef.current;
         // Still animating — ask for exactly one more frame.
         invalidate();
@@ -200,20 +209,30 @@ function PanoramaSphere({
   // Don't render until texture is ready
   if (!textureReady) return null;
 
-  // Render a transparent sphere for cross-fade effect
-  // During fade-in, use smaller radius to render in front of the previous panorama
-  const isFadingIn = opacity > opacityRef.current && opacityRef.current < 0.95;
-  const radius = isFadingIn ? customSphere - 0.02 : customSphere;
-
   return (
-    <mesh ref={meshRef} rotation={[0, rotationY, 0]}>
-      <sphereGeometry args={[radius, 128, 64]} />
+    <mesh
+      ref={meshRef}
+      rotation={[0, rotationY, 0]}
+      // Panorama spheres are the background layer and are stacked purely by
+      // radius: the widest draws first, the incoming one blends over it.
+      // Mount order must NOT decide this — the outgoing sphere reloads its
+      // texture from scratch and routinely appears a frame or two AFTER the
+      // incoming one, which (sorted by object id, since every sphere is
+      // centred on the camera) put it on top of a depth buffer that rejected
+      // it outright, so the cross-fade played over black.
+      renderOrder={-Math.round(customSphere * 100)}
+    >
+      <sphereGeometry args={[customSphere, 128, 64]} />
       <meshBasicMaterial
         ref={matRef}
         map={texture}
         side={THREE.BackSide}
         transparent
         opacity={opacityRef.current}
+        // A half-faded sphere still wrote full depth, hiding every wider
+        // sphere behind it. renderOrder above is the ordering authority now.
+        depthTest={false}
+        depthWrite={false}
       />
     </mesh>
   );
@@ -532,7 +551,10 @@ function VideoSphere({
       } else if (opacityRef.current < 1) {
         // Fade in smoothly, frame-rate independent (~0.3 s): delta*3 matches
         // the old +0.05/frame at 60 fps on every refresh rate.
-        opacityRef.current = Math.min(1, opacityRef.current + delta * 3);
+        opacityRef.current = Math.min(
+          1,
+          opacityRef.current + Math.min(delta, MAX_FADE_STEP) * 3,
+        );
         matRef.current.opacity = opacityRef.current;
         // Still fading in — ask for another frame.
         invalidate();
