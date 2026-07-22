@@ -39,6 +39,11 @@ console.log('  host:port  :', `${host}:${port}`, `(secure=${port === 465})`);
 console.log('  SMTP_USER  :', enabled ? 'set' : 'MISSING');
 console.log('  SMTP_PASS  :', process.env.SMTP_PASS ? 'set' : 'MISSING');
 console.log('  From       :', from);
+// gateverse.net has no MX record, so replies to From bounce unless this is set.
+console.log(
+  '  Reply-To   :',
+  process.env.EMAIL_REPLY_TO || 'UNSET — client replies will bounce (see ops/email-deliverability.md)'
+);
 console.log('  mailer     :', mailerEnabled() ? 'ENABLED' : 'DISABLED (reminders will not email)');
 
 // The logo is attached from disk at send time — a missing file throws mid-send

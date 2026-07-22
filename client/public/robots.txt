@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://gateverse.com/sitemap.xml
+Sitemap: https://gateverse.net/sitemap.xml

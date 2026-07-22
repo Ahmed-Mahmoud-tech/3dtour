@@ -13,6 +13,7 @@ usage is in [DOCKER.md](DOCKER.md).
 | Backups | [ops/backup/](ops/backup/) + `backup` service | Nightly `mongodump` (14-day retention) + weekly uploads tar (keep 4) → `./backups/` |
 | Monitoring | [docker-compose.monitoring.yml](docker-compose.monitoring.yml) | Uptime Kuma (alerts, status page) + Netdata (host/container metrics) |
 | Cheat sheet | [CHEATSHEET.md](CHEATSHEET.md) | Day-to-day command reference + helper scripts: `ops/health.sh`, `ops/backup/restore-drill.sh`, `ops/offsite/pull-backups.sh`, `ops/maintenance/docker-prune.sh` |
+| Email deliverability | [ops/email-deliverability.md](ops/email-deliverability.md) | SPF/DKIM/DMARC/MX for `gateverse.net` — reminders land in spam and client replies bounce without it |
 
 ## CI/CD
 

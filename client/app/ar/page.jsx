@@ -1,4 +1,5 @@
 import LandingView from '../../src/landing/LandingView.jsx';
+import Analytics from '../../src/landing/Analytics.jsx';
 import { businessJsonLd } from '../../src/landing/content.js';
 
 export const metadata = {
@@ -34,6 +35,7 @@ export default function Page() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(businessJsonLd) }}
       />
       <LandingView lang="ar" />
+      <Analytics />
     </>
   );
 }

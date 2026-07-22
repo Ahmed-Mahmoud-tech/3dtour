@@ -4,7 +4,7 @@
 //  */
 
 // // ⚠️ Set your real production domain before deploying (also update public/robots.txt + public/sitemap.xml).
-// export const SITE_URL = 'https://gateverse.com';
+// export const SITE_URL = 'https://gateverse.net';
 
 // // Digits only, international format. From the number you provided: +2011132326.
 // // NOTE: Egyptian mobiles are usually 12 digits internationally (20 + 11 32 32 xxxx) — double-check this one.
@@ -540,7 +540,7 @@
 /****************************************** */
 
 // Production domain setup
-export const SITE_URL = "https://gateverse.com";
+export const SITE_URL = "https://gateverse.net";
 
 // International format, digits only. Added the correct '11' sequence for Egyptian mobile format.
 export const WHATSAPP_NUMBER = "+201113232886";
