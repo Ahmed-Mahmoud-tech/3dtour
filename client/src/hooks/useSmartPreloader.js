@@ -16,6 +16,58 @@ const VIDEO_ATTEMPTS = 2;
 // <video> element will stream it on demand if the user actually navigates.
 const VIDEO_MAX_FAILED_CALLS = 3;
 
+// ─── Cache-eviction tuning ────────────────────────────────────────────────────
+// The caches below are BOOKKEEPING (url -> when we last warmed it), never the
+// bytes — those live in the browser's HTTP cache. The browser evicts that
+// cache under storage pressure without telling us, so a record here can
+// silently stop being true, and a node marked loaded would then never be
+// re-warmed. (Nothing breaks when that happens: TextureLoader and <video>
+// refetch on demand. It just stops being instant, which is the whole point of
+// preloading.)
+// No API can query the HTTP cache, so we use the one signal that exists: once
+// navigator.storage reports the origin near its quota, eviction is plausible
+// and records are only trusted for CACHE_TRUST_MS. Until that happens nothing
+// expires and the healthy case costs nothing.
+export const STORAGE_HIGH_WATER = 0.85;
+export const CACHE_TRUST_MS = 10 * 60_000;
+// While storage IS pressured, caching the rest of the tour only evicts what is
+// already cached (fill → evict → refill), so the sweep stops expanding and
+// just keeps the visitor's neighborhood warm.
+export const PRESSURED_SWEEP_NODES = 5;
+
+/**
+ * Whether the origin is close enough to its storage quota that the browser is
+ * likely evicting cached media. Unsupported/blocked → treated as healthy.
+ * Exported (pure but for the navigator read) so the eviction path is testable.
+ * @returns {Promise<boolean>}
+ */
+export async function isStoragePressured() {
+  try {
+    const { usage, quota } = (await navigator.storage?.estimate?.()) || {};
+    return quota > 0 && usage / quota > STORAGE_HIGH_WATER;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a cache record can still be believed. Pure decision, extracted from
+ * the hook so it can be unit-tested directly:
+ * - never warmed (undefined) → not fresh
+ * - no eviction risk yet → always fresh (nothing has been evicted, so
+ *   re-checking would be pure waste)
+ * - eviction plausible → fresh only within CACHE_TRUST_MS of the warm
+ * @param {number|undefined} warmedAt - Date.now() when last warmed, or undefined
+ * @param {boolean} evictionRisk - has storage ever read as pressured this session
+ * @param {number} [now]
+ * @returns {boolean}
+ */
+export function isRecordFresh(warmedAt, evictionRisk, now = Date.now()) {
+  if (warmedAt === undefined) return false;
+  if (!evictionRisk) return true;
+  return now - warmedAt < CACHE_TRUST_MS;
+}
+
 /**
  * useSmartPreloader — Intelligent asset preloading with proximity-based prioritization.
  *
@@ -29,13 +81,21 @@ const VIDEO_MAX_FAILED_CALLS = 3;
  *    user settles (preloadRemaining); nodes whose assets failed stay
  *    unmarked so a later sweep retries them
  * 4. Cache everything to avoid re-downloading; concurrent requests for the
- *    same URL share one in-flight fetch
+ *    same URL share one in-flight fetch. Records expire once the browser is
+ *    likely evicting them (see CACHE_TRUST_MS), so an evicted asset gets
+ *    re-warmed instead of being assumed cached forever
  * 5. Cancel and re-prioritize when user navigates
  */
 export function useSmartPreloader() {
-  const imageCache = useRef(new Set());
-  const videoCache = useRef(new Set());
-  const loadedNodes = useRef(new Set());
+  // key -> Date.now() of the last successful warm. Maps rather than Sets
+  // because these records expire once eviction becomes plausible.
+  const imageCache = useRef(new Map());
+  const videoCache = useRef(new Map());
+  const loadedNodes = useRef(new Map());
+  // Sticky: flipped the first time storage reads as pressured. From then on
+  // every cache record is only trusted for CACHE_TRUST_MS, because the
+  // browser may have thrown the bytes away behind our back.
+  const evictionRiskRef = useRef(false);
   // In-flight dedupe: url -> Promise<boolean>. Without this, the background
   // sweep and a click/hover preload could download the same panorama or clip
   // twice in parallel, starving each other of bandwidth.
@@ -48,6 +108,19 @@ export function useSmartPreloader() {
   // old one resumed and BOTH swept in parallel. Bumping a generation makes
   // every older sweep see itself as stale at its next check.
   const sweepGenRef = useRef(0);
+
+  /**
+   * Whether a cache record can still be believed. Before any sign of storage
+   * pressure a record never expires (nothing was evicted, so re-checking would
+   * be pure waste); after it, records go stale so they get re-warmed.
+   * @param {Map<string, number>} map
+   * @param {string} key
+   * @returns {boolean}
+   */
+  const isFresh = useCallback(
+    (map, key) => isRecordFresh(map.get(key), evictionRiskRef.current),
+    [],
+  );
 
   /**
    * Calculate graph distance between nodes using BFS.
@@ -117,40 +190,43 @@ export function useSmartPreloader() {
    *   decode warm-up failed — the viewer's texture loader decodes again
    *   anyway); false when the network load failed and a retry may succeed
    */
-  const preloadImage = useCallback((url) => {
-    if (!url || imageCache.current.has(url)) {
-      return Promise.resolve(true);
-    }
-    const inflight = imageInflight.current.get(url);
-    if (inflight) return inflight;
+  const preloadImage = useCallback(
+    (url) => {
+      if (!url || isFresh(imageCache.current, url)) {
+        return Promise.resolve(true);
+      }
+      const inflight = imageInflight.current.get(url);
+      if (inflight) return inflight;
 
-    const p = new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
+      const p = new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
 
-      img.onload = async () => {
-        try {
-          if (img.decode) {
-            await img.decode();
+        img.onload = async () => {
+          try {
+            if (img.decode) {
+              await img.decode();
+            }
+          } catch (err) {
+            console.warn("⚠️ Image decode failed:", url.split("/").pop());
           }
-        } catch (err) {
-          console.warn("⚠️ Image decode failed:", url.split("/").pop());
-        }
-        imageCache.current.add(url);
-        resolve(true);
-      };
+          imageCache.current.set(url, Date.now());
+          resolve(true);
+        };
 
-      img.onerror = () => {
-        console.warn("⚠️ Image preload failed:", url.split("/").pop());
-        resolve(false);
-      };
+        img.onerror = () => {
+          console.warn("⚠️ Image preload failed:", url.split("/").pop());
+          resolve(false);
+        };
 
-      img.src = url;
-    }).finally(() => imageInflight.current.delete(url));
+        img.src = url;
+      }).finally(() => imageInflight.current.delete(url));
 
-    imageInflight.current.set(url, p);
-    return p;
-  }, []);
+      imageInflight.current.set(url, p);
+      return p;
+    },
+    [isFresh],
+  );
 
   /**
    * One network attempt: fetch the clip and drain it into the HTTP cache.
@@ -206,7 +282,7 @@ export function useSmartPreloader() {
    */
   const preloadVideo = useCallback(
     (url) => {
-      if (!url || videoCache.current.has(url)) {
+      if (!url || isFresh(videoCache.current, url)) {
         return Promise.resolve(true);
       }
       const inflight = videoInflight.current.get(url);
@@ -219,7 +295,7 @@ export function useSmartPreloader() {
         for (let attempt = 1; attempt <= VIDEO_ATTEMPTS; attempt++) {
           try {
             await fetchVideoOnce(url);
-            videoCache.current.add(url);
+            videoCache.current.set(url, Date.now());
             videoFailedCalls.current.delete(url);
             return true;
           } catch (err) {
@@ -241,7 +317,7 @@ export function useSmartPreloader() {
       videoInflight.current.set(url, p);
       return p;
     },
-    [fetchVideoOnce],
+    [fetchVideoOnce, isFresh],
   );
 
   /**
@@ -334,7 +410,7 @@ export function useSmartPreloader() {
 
       for (const { nodeId } of targets) {
         const ok = await preloadNode(project.nodes[nodeId], project);
-        if (ok) loadedNodes.current.add(nodeId);
+        if (ok) loadedNodes.current.set(nodeId, Date.now());
         loaded += 1;
         onProgress?.(loaded, total);
       }
@@ -353,13 +429,26 @@ export function useSmartPreloader() {
     async (project, activeNodeId) => {
       const gen = ++sweepGenRef.current;
 
+      // Probe storage BEFORE deciding what to sweep. Near the quota, caching
+      // the rest of the tour just evicts what is already cached — and tells us
+      // the existing records can no longer be taken at face value.
+      const pressured = await isStoragePressured();
+      if (pressured) evictionRiskRef.current = true;
+      if (sweepGenRef.current !== gen) return;
+
       const sortedNodes = getNodesByProximity(project.nodes, activeNodeId);
 
-      // Everything not already fully cached, nearest first (includes nodes
-      // whose assets failed in an earlier pass — they get retried here)
-      const remaining = sortedNodes.filter(
-        ({ nodeId }) => !loadedNodes.current.has(nodeId),
+      // Everything not already warm, nearest first. Includes nodes whose
+      // assets failed in an earlier pass, and — once eviction is plausible —
+      // nodes whose record went stale: those get re-warmed rather than
+      // trusted forever.
+      let remaining = sortedNodes.filter(
+        ({ nodeId }) => !isFresh(loadedNodes.current, nodeId),
       );
+
+      // Under storage pressure, keep only the visitor's neighborhood warm
+      // instead of refilling a cache the browser is actively emptying.
+      if (pressured) remaining = remaining.slice(0, PRESSURED_SWEEP_NODES);
 
       if (remaining.length === 0) {
         return; // Silent - no console spam
@@ -379,7 +468,7 @@ export function useSmartPreloader() {
         // later navigation is instant. Only a fully-cached node is marked
         // loaded — partial failures stay eligible for the next sweep.
         const ok = await preloadNode(project.nodes[nodeId], project);
-        if (ok) loadedNodes.current.add(nodeId);
+        if (ok) loadedNodes.current.set(nodeId, Date.now());
 
         // Pause between nodes so the sweep never causes visible lag
         if (i < remaining.length - 1) {
@@ -387,7 +476,7 @@ export function useSmartPreloader() {
         }
       }
     },
-    [getNodesByProximity, preloadNode],
+    [getNodesByProximity, preloadNode, isFresh],
   );
 
   /**
@@ -424,21 +513,10 @@ export function useSmartPreloader() {
     [preloadImage, preloadVideo],
   );
 
-  /**
-   * Clear all caches (useful for memory management).
-   */
-  const clearCache = useCallback(() => {
-    imageCache.current.clear();
-    videoCache.current.clear();
-    loadedNodes.current.clear();
-    videoFailedCalls.current.clear();
-  }, []);
-
   return {
     preloadInitialNodes,
     preloadRemaining,
     cancelBackgroundLoading,
     preloadNextAssets,
-    clearCache,
   };
 }
