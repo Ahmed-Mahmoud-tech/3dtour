@@ -16,6 +16,19 @@ const SPHERE_RADIUS = 50;
 // fade stays multi-frame no matter how bad the hitch.
 const MAX_FADE_STEP = 1 / 30;
 
+// Video → panorama dissolve speed at the end of a transition clip. Deliberately
+// much faster than the ~0.3 s fade-in: while the clip's last frame and the
+// arrival panorama blend, any mismatch between them (dolly stopped short of
+// the pano spot, yaw a degree off, exposure shift) reads as a double-exposure
+// "ghost". ~0.125 s is short enough that the eye can't register the doubling,
+// while still soft enough not to read as a hard cut.
+const VIDEO_FADE_OUT_RATE = 8;
+
+// Max seconds an ended clip may hold its last frame waiting for the arrival
+// commit before dissolving anyway (safety valve for a target node that no
+// longer exists — useTour stays on the current node in that case).
+const MAX_ARRIVAL_HOLD = 0.5;
+
 // ─── Nadir logo patch settings ───────────────────────────────────────────────
 // A flat disc pinned at the bottom of the scene to hide the robot/tripod that
 // carries the camera. Shows the project's client logo when set; falls back to
@@ -130,9 +143,14 @@ function PanoramaSphere({
   onLoadError,
   retryNonce = 0,
 }) {
+  // Preview choice is a MOUNT-time decision: swapping previewUrl on a live
+  // sphere would re-run the texture effect (momentarily dropping the already-
+  // shown texture) for a preview that stops mattering the instant anything is
+  // displayed. Freeze the first value for the lifetime of the mount.
+  const initialPreviewUrlRef = useRef(previewUrl);
   const texture = useProgressiveTexture(
     panoramaUrl,
-    previewUrl,
+    initialPreviewUrlRef.current,
     onLoadError,
     retryNonce,
   );
@@ -498,6 +516,7 @@ function PanoramaControls({
 // is identical in every browser.
 function VideoSphere({
   videoUrl,
+  dissolveReady = true,
   onEnded,
   onFadeComplete,
   textureYawOffset = 0,
@@ -507,14 +526,23 @@ function VideoSphere({
   const fadingOutRef = useRef(false);
   const onEndedCalledRef = useRef(false);
   const fadeCompleteCalledRef = useRef(false);
+  // How long the ended clip has been holding its last frame waiting for the
+  // arrival commit (dissolveReady) — capped so a target that never commits
+  // (deleted node: useTour stays put) can't freeze the last frame forever.
+  const holdElapsedRef = useRef(0);
   const matRef = useRef();
   const meshRef = useRef();
   // Keep latest callbacks in refs to avoid re-creating the video
   const onEndedRef = useRef(onEnded);
   const onFadeCompleteRef = useRef(onFadeComplete);
+  const dissolveReadyRef = useRef(dissolveReady);
   useEffect(() => {
     onEndedRef.current = onEnded;
     onFadeCompleteRef.current = onFadeComplete;
+    dissolveReadyRef.current = dissolveReady;
+    // The arrival commit may land while the demand-mode loop is idle on the
+    // held last frame — kick it so the dissolve actually starts.
+    if (fadingOutRef.current) invalidate();
   });
 
   // Once the fade-in has reached 1 (and we're not fading out yet) or the
@@ -534,20 +562,38 @@ function VideoSphere({
 
     if (matRef.current) {
       if (fadingOutRef.current) {
-        // Call onEnded when fade STARTS to switch nodes
+        // Arrival is requested the moment the clip ends: onEnded switches the
+        // node behind the still-opaque video.
         if (!onEndedCalledRef.current) {
           onEndedCalledRef.current = true;
           onEndedRef.current?.();
         }
-        if (!fadeCompleteCalledRef.current) {
-          matRef.current.opacity = opacityRef.current;
-          fadeCompleteCalledRef.current = true;
-          // Call onFadeComplete when fade is DONE to cleanup
-          onFadeCompleteRef.current?.();
+        // HOLD the last frame at full opacity until that arrival has actually
+        // committed (dissolveReady) — dissolving sooner blends over the OLD
+        // panorama, which reads as a ghost of the departure room. Capped so a
+        // never-committing target can't freeze the frame forever.
+        if (!dissolveReadyRef.current && holdElapsedRef.current < MAX_ARRIVAL_HOLD) {
+          holdElapsedRef.current += delta;
+          invalidate();
+          return;
         }
-        // Fade-out work (and the ended/fade-complete callbacks) is done — stop.
-        // Deliberately no invalidate() call here, so the loop halts.
-        doneRef.current = true;
+        // Animate the dissolve — fast (~0.125 s, see VIDEO_FADE_OUT_RATE),
+        // frame-rate independent and hitch-capped by MAX_FADE_STEP.
+        opacityRef.current = Math.max(
+          0,
+          opacityRef.current - Math.min(delta, MAX_FADE_STEP) * VIDEO_FADE_OUT_RATE,
+        );
+        matRef.current.opacity = opacityRef.current;
+        if (opacityRef.current > 0) {
+          // Still dissolving — ask for one more frame.
+          invalidate();
+        } else if (!fadeCompleteCalledRef.current) {
+          fadeCompleteCalledRef.current = true;
+          // Fully transparent — tell the parent to tear the transition down
+          // (which unmounts this sphere). No invalidate(): the loop halts.
+          onFadeCompleteRef.current?.();
+          doneRef.current = true;
+        }
       } else if (opacityRef.current < 1) {
         // Fade in smoothly, frame-rate independent (~0.3 s): delta*3 matches
         // the old +0.05/frame at 60 fps on every refresh rate.
@@ -579,6 +625,7 @@ function VideoSphere({
     fadingOutRef.current = false;
     onEndedCalledRef.current = false;
     fadeCompleteCalledRef.current = false;
+    holdElapsedRef.current = 0;
     doneRef.current = false;
 
     const video = document.createElement("video");
@@ -626,10 +673,25 @@ function VideoSphere({
       }
     };
 
+    // A clip that can't play must fire BOTH callbacks: onEnded alone would
+    // arrive at the target but leave the transition state (and this broken
+    // sphere) mounted forever, since the parent now waits for onFadeComplete
+    // before tearing the transition down.
+    const abortTransition = () => {
+      if (!onEndedCalledRef.current) {
+        onEndedCalledRef.current = true;
+        onEndedRef.current?.();
+      }
+      if (!fadeCompleteCalledRef.current) {
+        fadeCompleteCalledRef.current = true;
+        onFadeCompleteRef.current?.();
+      }
+    };
+
     const handleError = () => {
       if (!mounted) return;
       console.error("Transition video failed:", videoUrl);
-      onEndedRef.current?.();
+      abortTransition();
     };
 
     video.addEventListener("playing", handlePlaying, { once: true });
@@ -645,7 +707,7 @@ function VideoSphere({
         if (!mounted) return;
         if (err.name !== "AbortError") {
           console.error("Transition video play rejected:", err);
-          onEndedRef.current?.();
+          abortTransition();
         }
       });
     }
@@ -796,6 +858,7 @@ function Scene({
   onYawChange,
   onPitchChange,
   transitionVideoUrl,
+  videoDissolveReady,
   onTransitionComplete,
   onVideoFadeComplete,
   videoTextureYawOffset,
@@ -806,6 +869,18 @@ function Scene({
   onPanoramaError,
   panoramaRetryNonce,
 }) {
+  // When this node's imagery is ALREADY on screen as an opaque backdrop
+  // (video-transition arrivals and queue waypoints), the active sphere must
+  // NOT fade its blurry 1536px preview in over that sharp full-res image —
+  // that low-res veil rising during the clip's dissolve is the second source
+  // of end-of-transition "ghosting" (the first being clip-vs-pano mismatch).
+  // With no preview the sphere simply stays unmounted (the backdrop shows)
+  // until the full texture is decoded, then fades in over identical imagery.
+  // Evaluated at the sphere's MOUNT (PanoramaSphere freezes previewUrl), so
+  // a sphere that predates the transition keeps the preview it started with.
+  const activeCoveredByBackdrop = Boolean(
+    transitionBackdrops?.some((b) => b.node.id === node.id),
+  );
   return (
     <>
       <PanoramaControls
@@ -853,7 +928,7 @@ function Scene({
       <PanoramaSphere
         key={node.id}
         panoramaUrl={pickPanoramaUrl(node)}
-        previewUrl={node.panoramaPreviewUrl}
+        previewUrl={activeCoveredByBackdrop ? null : node.panoramaPreviewUrl}
         opacity={panoramaOpacity}
         onFadeInComplete={onPanoramaFadeInComplete}
         yawOffset={node.initialYawOffset || 0}
@@ -866,6 +941,7 @@ function Scene({
         <VideoSphere
           key={`video-${videoQueueIndex ?? 0}-${transitionVideoUrl}`}
           videoUrl={transitionVideoUrl}
+          dissolveReady={videoDissolveReady}
           onEnded={onTransitionComplete}
           onFadeComplete={onVideoFadeComplete}
           textureYawOffset={videoTextureYawOffset || 0}
@@ -913,6 +989,7 @@ export default function SphereViewer({
   onYawChange,
   onPitchChange,
   transitionVideoUrl,
+  videoDissolveReady,
   onTransitionComplete,
   onVideoFadeComplete,
   videoTextureYawOffset,
@@ -1035,6 +1112,7 @@ export default function SphereViewer({
           onYawChange={onYawChange}
           onPitchChange={onPitchChange}
           transitionVideoUrl={transitionVideoUrl}
+          videoDissolveReady={videoDissolveReady}
           onTransitionComplete={onTransitionComplete}
           onVideoFadeComplete={onVideoFadeComplete}
           videoTextureYawOffset={videoTextureYawOffset}

@@ -82,6 +82,7 @@ export default function TourPage({ projectId }) {
     navigateTo,
     cancelTransition,
     onTransitionComplete,
+    finishTransition,
     setActiveNodeId,
     preloadNextAssets,
     // Multi-video queue state
@@ -135,6 +136,16 @@ export default function TourPage({ projectId }) {
   const videoTextureYawOffset = activeVideoSegment
     ? activeVideoSegment.yawOffset ?? 0
     : null;
+
+  // True once the arrival has actually COMMITTED (activeNodeId switched to the
+  // transition's target). The video sphere holds its last frame fully opaque
+  // until then and only then starts its dissolve — otherwise the first dissolve
+  // frames blend over the OLD panorama (the node swap lands a few frames after
+  // `ended`, later still when decoding the 7680px arrival texture hitches the
+  // main thread), which showed as a ghost of the departure room fading away.
+  const videoDissolveReady = transition
+    ? activeNodeId === transition.targetNodeId
+    : false;
 
   // ─── Backdrop panoramas rendered behind the currently-playing clip ────────
   // Two spheres per segment, keyed by NODE ID so React reuses them across
@@ -331,7 +342,7 @@ export default function TourPage({ projectId }) {
     setActiveNodeId(targetNodeId);
   };
 
-  // ─── Transition complete: video ended, clean up ──────────────────────────────
+  // ─── Transition complete: clip ended — arrive behind the still-visible video ──
   const handleTransitionComplete = () => {
     // IMPORTANT: Update preserved camera to CURRENT position (includes any dragging during video)
     setPreservedCameraYaw(cameraYawRef.current);
@@ -339,8 +350,11 @@ export default function TourPage({ projectId }) {
     onTransitionComplete();
   };
 
-  // ─── Video fade complete: cleanup transition state ───────────────────────────
-  const handleVideoFadeComplete = () => {};
+  // ─── Video fade complete: the dissolve into the arrival panorama finished ────
+  // Tears down the transition state, which unmounts the video sphere.
+  const handleVideoFadeComplete = () => {
+    finishTransition();
+  };
 
   if (loading) {
     return (
@@ -448,6 +462,7 @@ export default function TourPage({ projectId }) {
           cameraPitchRef.current = pitchRad;
         }}
         transitionVideoUrl={activeVideoUrl}
+        videoDissolveReady={videoDissolveReady}
         onTransitionComplete={handleTransitionComplete}
         onVideoFadeComplete={handleVideoFadeComplete}
         videoTextureYawOffset={videoTextureYawOffset}

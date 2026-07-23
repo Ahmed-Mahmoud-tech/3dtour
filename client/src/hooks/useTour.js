@@ -292,18 +292,29 @@ export function useTour(projectId) {
         videoUrl: videoQueue[nextIndex].videoUrl,
       }));
     } else {
-      // All videos played — complete the transition
+      // All videos played — arrive at the target while the clip's last frame
+      // is still on screen. The transition state is deliberately KEPT: the
+      // video sphere stays mounted and dissolves into the (identical) arrival
+      // panorama behind it; finishTransition() tears everything down once
+      // that fade-out completes. Land on the target only if it still exists;
+      // otherwise stay put rather than navigating into a black screen.
       const targetNodeId = transition.targetNodeId;
-      setTransition(null);
-      setIsTransitioning(false);
-      setHotspotVisible(true);
-      // Land on the target only if it still exists; otherwise stay put
-      // rather than navigating the viewer into a black screen.
       if (project?.nodes?.[targetNodeId]) setActiveNodeId(targetNodeId);
-      setVideoQueue([]);
-      setVideoQueueIndex(0);
     }
   }, [transition, videoQueue, videoQueueIndex, project]);
+
+  /**
+   * Called by VideoSphere when the end-of-clip fade-out has fully revealed
+   * the arrival panorama — tears down the transition state (which unmounts
+   * the video sphere) and brings the hotspots back.
+   */
+  const finishTransition = useCallback(() => {
+    setTransition(null);
+    setIsTransitioning(false);
+    setHotspotVisible(true);
+    setVideoQueue([]);
+    setVideoQueueIndex(0);
+  }, []);
 
   // ─── Transition watchdog ───────────────────────────────────────────────────
   // A clip that stalls mid-buffer (network drop, tab backgrounded on mobile)
@@ -363,6 +374,7 @@ export function useTour(projectId) {
     navigateTo,
     cancelTransition,
     onTransitionComplete,
+    finishTransition,
     setActiveNodeId,
     preloadNextAssets, // Expose for hover preloading
     // Multi-video queue state
