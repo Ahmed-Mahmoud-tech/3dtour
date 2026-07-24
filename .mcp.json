@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gateverse-facebook": {
+      "command": "node",
+      "args": ["mcp-facebook/src/index.js"]
+    }
+  }
+}
