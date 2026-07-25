@@ -580,7 +580,7 @@ export const businessJsonLd = {
         name: "360° photo virtual tour (Basic)",
       },
       priceCurrency: "EGP",
-      price: "7900",
+      price: "5900",
     },
     {
       "@type": "Offer",
@@ -589,7 +589,7 @@ export const businessJsonLd = {
         name: "Professional cinematic 360° virtual tour — filmed transitions, lead inbox & analytics",
       },
       priceCurrency: "EGP",
-      price: "18900",
+      price: "10900",
     },
     {
       "@type": "Offer",
@@ -598,7 +598,7 @@ export const businessJsonLd = {
         name: "Premium 360° virtual tour — large & multi-floor spaces, white-label & self-host export",
       },
       priceCurrency: "EGP",
-      price: "44900",
+      price: "22900",
     },
   ],
 };
@@ -773,7 +773,7 @@ export const STRINGS = {
           // renew: "then EGP 4,990/yr · or 499/mo",
           tagline: "The full cinematic experience",
           features: [
-            "Everything in Essential, plus:",
+            "Everything in Basic, plus:",
             "Up to 30 panoramic points",
             "Up to 15 information points",
             // "Client messages inbox — capture leads",
@@ -793,7 +793,7 @@ export const STRINGS = {
             "Full white-label on your own domain",
             "Original photo & video master files",
             "Project export — self-host or offline tour",
-            "Fast 2–5 day delivery + yearly update visit",
+            "Fast 2–5 day delivery",
           ],
           featured: false,
         },
@@ -817,7 +817,7 @@ export const STRINGS = {
         },
         {
           name: "Offline / kiosk copy",
-          price: "from EGP 5,900/yr",
+          price: "from EGP 5,900",
           // note: "yearly re-export",
           desc: "An offline build for an in-venue screen or exhibition while your tour stays live online. Included free with Premium.",
         },
@@ -1006,7 +1006,7 @@ export const STRINGS = {
           // renew: "ثم ١٬٩٩٠ ج.م سنويًا · أو ١٩٩ شهريًا",
           tagline: "جولة فوتوغرافية ٣٦٠°",
           features: [
-            "حتى ١٥ نقاط بانورامية",
+            "حتى ١٥ نقطة بانورامية",
             // "حتى ١٥ انتقال فيديو متصوّر",
             "حتى ٥ نقاط معلومات",
             "لوحة تحليلات الزوار",
@@ -1023,7 +1023,7 @@ export const STRINGS = {
           features: [
             "كل ما في الأساسية، بالإضافة إلى:",
             "حتى ٣٠ نقطة بانورامية",
-            "حتى ١٥ نقاط معلومات",
+            "حتى ١٥ نقطة معلومات",
             // "صندوق رسائل العملاء — لاستقطاب العملاء المحتملين",
             "موسيقى خلفية مخصصة",
             "تسليم أولوية خلال ٤ - ٧ أيام",
