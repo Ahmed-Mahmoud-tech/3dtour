@@ -32,13 +32,44 @@ const toYMD = (date) => {
   return `${y}-${m}-${d}`;
 };
 
+const fromYMD = (ymd) => {
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// Day arithmetic on calendar components, not milliseconds: a ±DAY_MS jump
+// lands on the wrong day across a DST change (Egypt observes DST again).
+const addDays = (date, n) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
+
+// Inclusive day count of a YMD..YMD range (round absorbs 23h/25h DST days)
+const spanDays = (a, b) =>
+  Math.round((fromYMD(b).getTime() - fromYMD(a).getTime()) / DAY_MS) + 1;
+
+// Shortcuts; any other period is typed into the two date fields.
 const PRESETS = [
-  { label: "Today", days: 0 },
-  { label: "7 days", days: 6 },
-  { label: "30 days", days: 29 },
-  { label: "90 days", days: 89 },
-  { label: "This month", month: true },
+  { label: "Today", range: (n) => [toYMD(n), toYMD(n)] },
+  { label: "7 days", range: (n) => [toYMD(addDays(n, -6)), toYMD(n)] },
+  { label: "30 days", range: (n) => [toYMD(addDays(n, -29)), toYMD(n)] },
+  { label: "90 days", range: (n) => [toYMD(addDays(n, -89)), toYMD(n)] },
+  {
+    label: "This month",
+    range: (n) => [toYMD(new Date(n.getFullYear(), n.getMonth(), 1)), toYMD(n)],
+  },
+  {
+    label: "Last month",
+    range: (n) => [
+      toYMD(new Date(n.getFullYear(), n.getMonth() - 1, 1)),
+      toYMD(new Date(n.getFullYear(), n.getMonth(), 0)), // day 0 = last of prev month
+    ],
+  },
+  {
+    label: "This year",
+    range: (n) => [toYMD(new Date(n.getFullYear(), 0, 1)), toYMD(n)],
+  },
 ];
+
+const DEFAULT_PRESET = PRESETS[2]; // 30 days
 
 // Subscription.history actions → badge copy + color
 const SUB_EVENT_STYLE = {
@@ -98,13 +129,20 @@ function StatCard({ icon, label, value, accent = "text-white" }) {
   );
 }
 
-function Section({ title, count, children }) {
+function Section({ title, count, truncated, limit, children }) {
   return (
     <section className="mb-8">
       <h3 className="text-sm font-semibold text-white mb-2">
         {title}
         {count !== undefined && (
           <span className="text-gray-500 font-normal ml-2">({count})</span>
+        )}
+        {/* A wide custom range can outgrow the per-section cap — say so
+            instead of quietly showing a partial list. */}
+        {truncated && (
+          <span className="text-amber-400/80 font-normal ml-2 text-xs">
+            showing the most recent {limit} — narrow the dates to see the rest
+          </span>
         )}
       </h3>
       {children}
@@ -120,8 +158,14 @@ function Empty({ children }) {
 // (renewals, new tours, exports, assignments…) plus the always-current
 // "expiring soon" list with renew/cancel right on the row.
 export default function ReportsPage() {
-  const [from, setFrom] = useState(toYMD(new Date(Date.now() - 29 * DAY_MS)));
-  const [to, setTo] = useState(toYMD(new Date()));
+  // `applied` is what the report was fetched for; `draft` is what's in the two
+  // date fields. Splitting them means typing a custom range doesn't fire a
+  // request per keystroke (and never queries a half-edited period).
+  const [applied, setApplied] = useState(() => {
+    const [f, t] = DEFAULT_PRESET.range(new Date());
+    return { from: f, to: t };
+  });
+  const [draft, setDraft] = useState(applied);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -131,23 +175,38 @@ export default function ReportsPage() {
     setLoading(true);
     setError("");
     try {
-      setReport(await adminApi.getReport({ from, to }));
+      setReport(
+        await adminApi.getReport({
+          from: applied.from,
+          to: applied.to,
+          // Day boundaries belong to the admin's timezone, not the server's
+          tz: new Date().getTimezoneOffset(),
+        }),
+      );
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [applied]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
   const applyPreset = (p) => {
-    const now = new Date();
-    if (p.month) setFrom(toYMD(new Date(now.getFullYear(), now.getMonth(), 1)));
-    else setFrom(toYMD(new Date(now.getTime() - p.days * DAY_MS)));
-    setTo(toYMD(now));
+    const [f, t] = p.range(new Date());
+    setDraft({ from: f, to: t });
+    setApplied({ from: f, to: t });
+  };
+
+  const rangeInvalid = !draft.from || !draft.to || draft.from > draft.to;
+  const dirty = draft.from !== applied.from || draft.to !== applied.to;
+
+  const applyDraft = () => {
+    if (rangeInvalid) return;
+    if (dirty) setApplied({ ...draft });
+    else refresh(); // same range → treat Apply as a reload
   };
 
   // Renew/cancel straight from the expiring list — same endpoints the
@@ -185,18 +244,15 @@ export default function ReportsPage() {
   const s = report?.summary;
   const renewals = s ? s.subscriptions.renewed + s.subscriptions.plan_changed : 0;
 
-  // Preset chip highlighting: active when it produces the current range
+  // Preset chip highlighting: active when it produces exactly what's in the fields
   const activePreset = useMemo(() => {
     const now = new Date();
-    if (to !== toYMD(now)) return null;
     for (const p of PRESETS) {
-      const f = p.month
-        ? toYMD(new Date(now.getFullYear(), now.getMonth(), 1))
-        : toYMD(new Date(now.getTime() - p.days * DAY_MS));
-      if (f === from) return p.label;
+      const [f, t] = p.range(now);
+      if (f === draft.from && t === draft.to) return p.label;
     }
     return null;
-  }, [from, to]);
+  }, [draft]);
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
@@ -233,8 +289,31 @@ export default function ReportsPage() {
       </header>
 
       <main className="flex-1 px-6 py-8 max-w-6xl mx-auto w-full">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h2 className="text-xl font-semibold text-white">Activity Report</h2>
+          <p className="text-xs text-gray-500">
+            {loading
+              ? "Loading…"
+              : report && (
+                  <>
+                    {/* The server decides the real boundaries (it clamps very
+                        wide spans), so report the range it actually used. */}
+                    {report.range?.days ?? spanDays(applied.from, applied.to)}{" "}
+                    days · {fmtDate(report.range?.from || applied.from)} →{" "}
+                    {fmtDate(report.range?.to || applied.to)}
+                    {report.range?.clamped && (
+                      <span className="text-amber-400/80">
+                        {" "}
+                        · range shortened to the maximum allowed
+                      </span>
+                    )}
+                  </>
+                )}
+          </p>
+        </div>
+
+        {/* Period picker: shortcut chips + a free From/To range */}
+        <div className="admin-card mb-6 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {PRESETS.map((p) => (
               <button
@@ -243,26 +322,71 @@ export default function ReportsPage() {
                 className={`text-xs px-2.5 py-1 rounded border transition-colors ${
                   activePreset === p.label
                     ? "bg-teal-900/40 text-teal-300 border-teal-700"
-                    : "bg-gray-900 text-gray-400 border-gray-700 hover:text-white"
+                    : "bg-gray-950 text-gray-400 border-gray-700 hover:text-white"
                 }`}
               >
                 {p.label}
               </button>
             ))}
-            <input
-              type="date"
-              value={from}
-              max={to}
-              onChange={(e) => setFrom(e.target.value)}
-              className="admin-input text-xs py-1 w-auto"
-            />
-            <span className="text-gray-600 text-xs">→</span>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="admin-input text-xs py-1 w-auto"
-            />
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wide text-gray-500">
+                From
+              </span>
+              <input
+                type="date"
+                value={draft.from}
+                max={draft.to || undefined}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, from: e.target.value }))
+                }
+                onKeyDown={(e) => e.key === "Enter" && applyDraft()}
+                className="admin-input text-sm py-1.5 w-auto"
+              />
+            </label>
+            <span className="text-gray-600 text-sm pb-2">→</span>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wide text-gray-500">
+                To
+              </span>
+              <input
+                type="date"
+                value={draft.to}
+                min={draft.from || undefined}
+                onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && applyDraft()}
+                className="admin-input text-sm py-1.5 w-auto"
+              />
+            </label>
+            <button
+              onClick={applyDraft}
+              disabled={rangeInvalid || loading}
+              className={`text-sm py-1.5 px-4 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
+                dirty
+                  ? "bg-teal-600 hover:bg-teal-500 text-white"
+                  : "bg-gray-700 hover:bg-gray-600 text-white"
+              }`}
+              title={dirty ? "Load this period" : "Reload this period"}
+            >
+              <FaSyncAlt size={11} className={loading ? "animate-spin" : ""} />
+              {dirty ? "Apply" : "Refresh"}
+            </button>
+            {rangeInvalid && (
+              <span className="text-xs text-red-400 pb-2">
+                {!draft.from || !draft.to
+                  ? "Pick both dates."
+                  : "“From” must be on or before “To”."}
+              </span>
+            )}
+            {!rangeInvalid && dirty && (
+              <span className="text-xs text-amber-400/80 pb-2">
+                {spanDays(draft.from, draft.to)} day
+                {spanDays(draft.from, draft.to) === 1 ? "" : "s"} selected — hit
+                Apply
+              </span>
+            )}
           </div>
         </div>
 
@@ -322,7 +446,9 @@ export default function ReportsPage() {
                   Needs attention — subscriptions due within 30 days
                 </>
               }
-              count={report.expiring.length}
+              count={report.totals?.expiring ?? report.expiring.length}
+              truncated={report.truncated?.expiring}
+              limit={report.limit}
             >
               {report.expiring.length === 0 ? (
                 <Empty>Nothing due in the next 30 days. 🎉</Empty>
@@ -394,7 +520,12 @@ export default function ReportsPage() {
             {/* Subscription events in the period */}
             <Section
               title="Subscription activity"
-              count={report.subscriptionEvents.length}
+              count={
+                report.totals?.subscriptionEvents ??
+                report.subscriptionEvents.length
+              }
+              truncated={report.truncated?.subscriptionEvents}
+              limit={report.limit}
             >
               {report.subscriptionEvents.length === 0 ? (
                 <Empty>No subscription activity in this period.</Empty>
@@ -444,7 +575,12 @@ export default function ReportsPage() {
             </Section>
 
             {/* New tours */}
-            <Section title="New tours" count={report.newProjects.length}>
+            <Section
+              title="New tours"
+              count={s.newProjects}
+              truncated={report.truncated?.newProjects}
+              limit={report.limit}
+            >
               {report.newProjects.length === 0 ? (
                 <Empty>No tours created in this period.</Empty>
               ) : (
@@ -475,7 +611,12 @@ export default function ReportsPage() {
 
             {/* New clients / employees */}
             <div className="grid md:grid-cols-2 gap-6">
-              <Section title="New clients" count={report.newClients.length}>
+              <Section
+                title="New clients"
+                count={s.newClients}
+                truncated={report.truncated?.newClients}
+                limit={report.limit}
+              >
                 {report.newClients.length === 0 ? (
                   <Empty>No clients added in this period.</Empty>
                 ) : (
@@ -493,7 +634,12 @@ export default function ReportsPage() {
                   </div>
                 )}
               </Section>
-              <Section title="New employees" count={report.newEmployees.length}>
+              <Section
+                title="New employees"
+                count={s.newEmployees}
+                truncated={report.truncated?.newEmployees}
+                limit={report.limit}
+              >
                 {report.newEmployees.length === 0 ? (
                   <Empty>No employees added in this period.</Empty>
                 ) : (
@@ -512,7 +658,12 @@ export default function ReportsPage() {
             </div>
 
             {/* Everything else the team did (from the activity log) */}
-            <Section title="Other activity" count={report.activities.length}>
+            <Section
+              title="Other activity"
+              count={report.totals?.activities ?? report.activities.length}
+              truncated={report.truncated?.activities}
+              limit={report.limit}
+            >
               {report.activities.length === 0 ? (
                 <Empty>
                   No other activity in this period. (Exports, deletions and
