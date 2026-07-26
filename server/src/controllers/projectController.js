@@ -6,6 +6,7 @@ import Upload from "../models/Upload.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { safeUploadPath } from "../utils/uploadPaths.js";
 import { bindIncomingMedia, forgetUpload } from "../utils/mediaBinding.js";
+import { logActivity } from "../utils/activityLog.js";
 
 // Fire-and-forget: callers don't await — failures are logged, never fatal,
 // and the async unlink keeps the event loop free during bulk deletes. The
@@ -161,6 +162,11 @@ export const createProject = asyncHandler(async (req, res) => {
     },
     createdBy: req.user._id,
   });
+  logActivity(req.user, {
+    action: "project_created",
+    project: project._id,
+    projectTitle: project.info?.title || "",
+  });
   res.status(201).json(project);
 });
 
@@ -266,6 +272,11 @@ export const deleteProject = asyncHandler(async (req, res) => {
     Subscription.deleteOne({ project: req.params.id }),
     Upload.deleteMany({ project: req.params.id }),
   ]);
+  logActivity(req.user, {
+    action: "project_deleted",
+    project: project._id,
+    projectTitle: project.info?.title || "",
+  });
   res.json({ message: "Project deleted" });
 });
 

@@ -245,6 +245,12 @@ export default function ProjectsPage() {
                 >
                   Employees
                 </Link>
+                <Link
+                  to="/reports"
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  Reports
+                </Link>
               </>
             )}
           </nav>

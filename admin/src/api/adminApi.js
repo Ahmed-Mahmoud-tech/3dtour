@@ -50,6 +50,9 @@ export const adminApi = {
   deleteNotification: (id) =>
     axios.delete(`${BASE}/notifications/${id}`).then((r) => r.data),
 
+  // Activity report — params: { from, to } (YYYY-MM-DD, both optional)
+  getReport: (params) => axios.get(`${BASE}/report`, { params }).then((r) => r.data),
+
   // Self-hosted tour export — downloads a zip (auth header required, so no plain <a href>)
   exportProject: async (projectId, filename = 'tour-export.zip') => {
     const { data } = await axios.get(`${BASE}/projects/${projectId}/export`, {

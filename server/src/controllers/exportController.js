@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { ZipArchive } from 'archiver';
 import Project from '../models/Project.js';
 import { UPLOADS_ROOT, safeUploadPath } from '../utils/uploadPaths.js';
+import { logActivity } from '../utils/activityLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,6 +99,11 @@ export const exportProject = async (req, res) => {
     }
 
     await archive.finalize();
+    logActivity(req.user, {
+      action: 'project_exported',
+      project: project._id,
+      projectTitle: project.info?.title || '',
+    });
   } catch (err) {
     console.error('Export failed:', err);
     // Never leak internal error details (paths, driver messages) to the client

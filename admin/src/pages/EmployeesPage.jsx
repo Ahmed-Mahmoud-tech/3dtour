@@ -158,6 +158,12 @@ export default function EmployeesPage() {
             <Link to="/employees" className="text-white font-medium">
               Employees
             </Link>
+            <Link
+              to="/reports"
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              Reports
+            </Link>
           </nav>
         </div>
         <AccountControls />

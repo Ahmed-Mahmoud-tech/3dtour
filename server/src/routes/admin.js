@@ -18,6 +18,7 @@ import {
   assignProjectEmployee,
 } from '../controllers/adminController.js';
 import { exportProject } from '../controllers/exportController.js';
+import { getActivityReport } from '../controllers/reportController.js';
 import {
   listNotifications,
   setNotificationRead,
@@ -54,6 +55,8 @@ router.put('/projects/:id/assign', validateBody(assignOwnerSchema), assignProjec
 router.put('/projects/:id/access', validateBody(projectAccessSchema), updateProjectAccess);
 router.put('/projects/:id/assign-employee', validateBody(assignEmployeeSchema), assignProjectEmployee);
 router.get('/projects/:id/export', exportProject);
+// Activity report: everything that happened in ?from..?to + expiring-soon list
+router.get('/report', getActivityReport);
 // In-app notifications (subscription expiry alerts) — shared by the admin team.
 // read-all is registered before /:id/read so 'read-all' is never parsed as an id.
 router.get('/notifications', listNotifications);

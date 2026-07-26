@@ -21,6 +21,10 @@ backups/
 # نسخ العقود الجاهزة للطباعة (مولّدة بـ contracts/build-print.mjs)
 contracts/print/
 
+# قواعد بيانات العملاء المحتملين — بيانات مبيعات محلية، والديبلوي بيشحن
+# المستودع كله للسيرفر (git archive) فمالهاش لازمة هناك
+leads/
+
 # OS / editor
 .DS_Store
 Thumbs.db

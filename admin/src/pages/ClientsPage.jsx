@@ -468,6 +468,12 @@ export default function ClientsPage() {
             >
               Employees
             </Link>
+            <Link
+              to="/reports"
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              Reports
+            </Link>
           </nav>
         </div>
         <AccountControls />

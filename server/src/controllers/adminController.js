@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Project from '../models/Project.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { logActivity } from '../utils/activityLog.js';
 
 // Request bodies here are validated by validateBody(...) at the route, so
 // controllers trust the shape and only do business checks (uniqueness, etc.).
@@ -109,6 +110,11 @@ export const createOwner = asyncHandler(async (req, res) => {
     mustChangePassword: true,
   });
 
+  logActivity(req.user, {
+    action: 'owner_created',
+    targetUser: owner._id,
+    targetUserName: owner.name,
+  });
   res.status(201).json({ owner });
 });
 
@@ -186,6 +192,12 @@ export const updateOwner = asyncHandler(async (req, res) => {
     if (err.code === 11000) return res.status(409).json({ message: 'Email already registered' });
     throw err;
   }
+  logActivity(req.user, {
+    action: 'owner_updated',
+    targetUser: owner._id,
+    targetUserName: owner.name,
+    meta: { fields: Object.keys(req.body) },
+  });
   res.json(owner);
 });
 
@@ -200,6 +212,11 @@ export const resetOwnerPassword = asyncHandler(async (req, res) => {
   owner.mustChangePassword = true;
   await owner.save();
 
+  logActivity(req.user, {
+    action: 'owner_password_reset',
+    targetUser: owner._id,
+    targetUserName: owner.name,
+  });
   res.json({ message: 'Password reset', owner });
 });
 
@@ -215,6 +232,11 @@ export const deleteOwner = asyncHandler(async (req, res) => {
     owner.deleteOne(),
   ]);
 
+  logActivity(req.user, {
+    action: 'owner_deleted',
+    targetUser: owner._id,
+    targetUserName: owner.name,
+  });
   res.json({ message: 'Owner deleted' });
 });
 
@@ -229,8 +251,21 @@ export const upsertSubscription = asyncHandler(async (req, res) => {
       ? new Date(expiresAt)
       : null;
 
-  const project = await Project.findById(req.params.id).select('_id');
+  const project = await Project.findById(req.params.id)
+    .select('_id info.title owner')
+    .populate('owner', 'name');
   if (!project) return res.status(404).json({ message: 'Project not found' });
+
+  // Shared shape for the audit entries below
+  const subActivity = (action, expiresAt) =>
+    logActivity(req.user, {
+      action,
+      project: project._id,
+      projectTitle: project.info?.title || '',
+      targetUser: project.owner?._id || null,
+      targetUserName: project.owner?.name || '',
+      meta: { plan, expiresAt },
+    });
 
   let sub = await Subscription.findOne({ project: project._id });
 
@@ -243,6 +278,7 @@ export const upsertSubscription = asyncHandler(async (req, res) => {
       expiresAt: customExpiry || addToPlan(startedAt, plan),
       history: [{ action: 'created', plan, by: req.user._id }],
     });
+    subActivity('subscription_created', sub.expiresAt);
     return res.status(201).json(sub);
   }
 
@@ -260,6 +296,7 @@ export const upsertSubscription = asyncHandler(async (req, res) => {
     by: req.user._id,
   });
   await sub.save();
+  subActivity(planChanged ? 'subscription_plan_changed' : 'subscription_renewed', sub.expiresAt);
   res.json(sub);
 });
 
@@ -277,6 +314,18 @@ export const setSubscriptionStatus = asyncHandler(async (req, res) => {
     by: req.user._id,
   });
   await sub.save();
+
+  const project = await Project.findById(sub.project)
+    .select('info.title owner')
+    .populate('owner', 'name');
+  logActivity(req.user, {
+    action: status === 'canceled' ? 'subscription_canceled' : 'subscription_reactivated',
+    project: sub.project,
+    projectTitle: project?.info?.title || '',
+    targetUser: project?.owner?._id || null,
+    targetUserName: project?.owner?.name || '',
+    meta: { plan: sub.plan, expiresAt: sub.expiresAt },
+  });
   res.json(sub);
 });
 
@@ -300,6 +349,11 @@ export const createEmployee = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
   });
 
+  logActivity(req.user, {
+    action: 'employee_created',
+    targetUser: employee._id,
+    targetUserName: employee.name,
+  });
   res.status(201).json(employee);
 });
 
@@ -355,6 +409,12 @@ export const updateEmployee = asyncHandler(async (req, res) => {
     if (err.code === 11000) return res.status(409).json({ message: 'Email already registered' });
     throw err;
   }
+  logActivity(req.user, {
+    action: 'employee_updated',
+    targetUser: employee._id,
+    targetUserName: employee.name,
+    meta: { fields: Object.keys(req.body) },
+  });
   res.json(employee);
 });
 
@@ -369,6 +429,11 @@ export const resetEmployeePassword = asyncHandler(async (req, res) => {
   employee.mustChangePassword = true;
   await employee.save();
 
+  logActivity(req.user, {
+    action: 'employee_password_reset',
+    targetUser: employee._id,
+    targetUserName: employee.name,
+  });
   res.json({ message: 'Password reset', employee });
 });
 
@@ -383,6 +448,11 @@ export const deleteEmployee = asyncHandler(async (req, res) => {
     employee.deleteOne(),
   ]);
 
+  logActivity(req.user, {
+    action: 'employee_deleted',
+    targetUser: employee._id,
+    targetUserName: employee.name,
+  });
   res.json({ message: 'Employee deleted' });
 });
 
@@ -390,8 +460,9 @@ export const deleteEmployee = asyncHandler(async (req, res) => {
 export const assignProjectEmployee = asyncHandler(async (req, res) => {
   const { employeeId } = req.body; // null | 24-hex ObjectId (validated)
 
+  let employee = null;
   if (employeeId) {
-    const employee = await User.findOne({ _id: employeeId, role: 'employee' });
+    employee = await User.findOne({ _id: employeeId, role: 'employee' });
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
   }
 
@@ -402,6 +473,13 @@ export const assignProjectEmployee = asyncHandler(async (req, res) => {
   ).select('info.title assignedTo');
   if (!project) return res.status(404).json({ message: 'Project not found' });
 
+  logActivity(req.user, {
+    action: employee ? 'employee_assigned' : 'employee_unassigned',
+    project: project._id,
+    projectTitle: project.info?.title || '',
+    targetUser: employee?._id || null,
+    targetUserName: employee?.name || '',
+  });
   res.json(project);
 });
 
@@ -429,6 +507,12 @@ export const updateProjectAccess = asyncHandler(async (req, res) => {
   }
 
   await project.save();
+  logActivity(req.user, {
+    action: 'project_access_changed',
+    project: project._id,
+    projectTitle: project.info?.title || '',
+    meta: { suspended, expiryMode, expiryDate },
+  });
   res.json(project);
 });
 
@@ -436,8 +520,9 @@ export const updateProjectAccess = asyncHandler(async (req, res) => {
 export const assignProjectOwner = asyncHandler(async (req, res) => {
   const { ownerId } = req.body; // null | 24-hex ObjectId (validated)
 
+  let owner = null;
   if (ownerId) {
-    const owner = await User.findOne({ _id: ownerId, role: 'owner' });
+    owner = await User.findOne({ _id: ownerId, role: 'owner' });
     if (!owner) return res.status(404).json({ message: 'Owner not found' });
   }
 
@@ -448,5 +533,12 @@ export const assignProjectOwner = asyncHandler(async (req, res) => {
   ).select('info.title owner');
   if (!project) return res.status(404).json({ message: 'Project not found' });
 
+  logActivity(req.user, {
+    action: owner ? 'owner_assigned' : 'owner_unassigned',
+    project: project._id,
+    projectTitle: project.info?.title || '',
+    targetUser: owner?._id || null,
+    targetUserName: owner?.name || '',
+  });
   res.json(project);
 });

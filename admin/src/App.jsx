@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage.jsx';
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage.jsx'));
 const ClientsPage = lazy(() => import('./pages/ClientsPage.jsx'));
 const EmployeesPage = lazy(() => import('./pages/EmployeesPage.jsx'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage.jsx'));
 const ProjectEditPage = lazy(() => import('./pages/ProjectEditPage.jsx'));
 const StudioPage = lazy(() => import('./pages/StudioPage.jsx'));
 
@@ -38,6 +39,10 @@ export default function App() {
 
             <Route path="/employees" element={
               <ProtectedRoute adminOnly><EmployeesPage /></ProtectedRoute>
+            } />
+
+            <Route path="/reports" element={
+              <ProtectedRoute adminOnly><ReportsPage /></ProtectedRoute>
             } />
 
             <Route path="/projects/:projectId" element={
