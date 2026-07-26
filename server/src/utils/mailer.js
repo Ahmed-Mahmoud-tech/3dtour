@@ -19,13 +19,11 @@ const FROM =
   (process.env.NODE_ENV === 'production' ? PROD_FROM : DEV_FROM);
 
 // Every reminder tells the client to "just reply to this email". gateverse.net
-// has no MX record, so a reply to the From address bounces — set
-// EMAIL_REPLY_TO to a mailbox that actually receives (e.g. the team Gmail)
-// and the reply lands somewhere real. Unset = replies go nowhere.
-const REPLY_TO = process.env.EMAIL_REPLY_TO || '';
-if (!REPLY_TO) {
-  console.warn('[mailer] EMAIL_REPLY_TO not set — client replies to reminders may bounce');
-}
+// has no MX record, so a reply to the production From address bounces — until
+// Email Routing exists (ops/email-deliverability.md Fix 2), replies must be
+// steered to a mailbox that actually receives. Defaults to the team Gmail;
+// EMAIL_REPLY_TO overrides (point it at contact@gateverse.net once MX is live).
+const REPLY_TO = process.env.EMAIL_REPLY_TO || 'ahmedmahmoudtech@gmail.com';
 
 let transporter = null;
 

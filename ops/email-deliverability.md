@@ -7,74 +7,87 @@ This is the DNS + config checklist that keeps them in the inbox.
 Production relays through **Brevo**, and Brevo only accepts `gateverse.net` as a
 sender — see the `PROD_FROM` note in [mailer.js](../server/src/utils/mailer.js).
 
-## Audited state — 2026-07-22 (queried against 1.1.1.1)
+## Audited state — 2026-07-26 ✅ all green
 
-| Record | Status | Value found |
+Queried against **both** authoritative nameservers (`kara`/`kenneth.ns.cloudflare.com`),
+not a cache:
+
+| Record | Status | Value |
 | --- | --- | --- |
-| Brevo domain verification | ✅ present | `brevo-code:a166ee687519c1b37717ef565cc72f94` |
-| DKIM `brevo1._domainkey` | ✅ present | RSA public key |
-| DKIM `brevo2._domainkey` | ✅ present | RSA public key |
+| Brevo domain verification | ✅ | `brevo-code:a166ee687519c1b37717ef565cc72f94` |
+| DKIM `brevo1._domainkey` | ✅ | CNAME → `b1.gateverse-net.dkim.brevo.com` |
+| DKIM `brevo2._domainkey` | ✅ | CNAME → `b2.gateverse-net.dkim.brevo.com` |
+| **SPF** (single TXT) | ✅ | `v=spf1 include:spf.brevo.com include:_spf.mx.cloudflare.net ~all` |
+| **MX** | ✅ | `route1/2/3.mx.cloudflare.net` (Cloudflare Email Routing, enabled) |
 | DMARC `_dmarc` | ⚠️ monitor-only | `v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com` |
-| **SPF** | ❌ **missing** | — only the brevo-code TXT exists |
-| **MX** | ❌ **missing** | replies to `contact@gateverse.net` bounce |
 
-DNS is hosted on Cloudflare (the apex A records are Cloudflare proxy IPs), so
-every change below is made in the Cloudflare dashboard for the zone.
+**Where the records live.** The domain is registered at **Spaceship** and the app
+is hosted on the **Contabo VPS**, but the nameservers are Cloudflare's — so every
+DNS record, mail included, is edited in the Cloudflare dashboard for the zone.
+Spaceship's DNS panel has no effect while the nameservers point at Cloudflare.
 
-## Fix 1 — add SPF (required)
+## ⚠️ The SPF record is the fragile part — read before touching Email Routing
 
-Without SPF, receivers that don't evaluate DKIM see an unauthenticated sender.
-Add **one** TXT record:
-
-| Field | Value |
-| --- | --- |
-| Type | `TXT` |
-| Name | `@` |
-| Content | `v=spf1 include:spf.brevo.com ~all` |
-
-`spf.brevo.com` was verified to resolve to Brevo's sending ranges. Use `~all`
-(softfail) rather than `-all` until the setup is confirmed working.
-
-> **A domain may publish only ONE SPF record.** Two `v=spf1` TXT records is a
-> permerror and authentication fails outright — worse than having none. If you
-> later enable a service that asks you to add its own SPF, merge the includes
-> into the single record instead of adding a second one (see Fix 2).
-
-## Fix 2 — make the domain receive mail (MX)
-
-Every reminder tells the client to *"just reply to this email"*, but with no MX
-record their reply bounces. Cheapest correct fix is **Cloudflare Email Routing**
-(free) forwarding `contact@gateverse.net` to a real mailbox:
-
-1. Cloudflare dashboard → the `gateverse.net` zone → **Email** → **Email Routing** → enable.
-2. Add a custom address: `contact@gateverse.net` → forward to your Gmail.
-3. Confirm the verification mail Cloudflare sends to that Gmail.
-4. Cloudflare adds the required `route1/2/3.mx.cloudflare.net` MX records itself.
-
-⚠️ **The SPF collision.** Cloudflare will offer to add
-`v=spf1 include:_spf.mx.cloudflare.net ~all`. Do **not** let it create a second
-SPF record next to the Brevo one. Keep exactly one, containing both includes:
+A domain may publish only **ONE** `v=spf1` TXT record. Two is a permerror and
+authentication fails outright, which is worse than having none. Ours must carry
+**both** includes in that single record:
 
 ```
 v=spf1 include:spf.brevo.com include:_spf.mx.cloudflare.net ~all
 ```
 
-## Fix 3 — reply-to fallback (works immediately, no DNS wait)
+- `include:spf.brevo.com` — authorises Brevo, which **sends** the reminders.
+  Without it Brevo mail softfails SPF (it survives on DKIM alone).
+- `include:_spf.mx.cloudflare.net` — authorises Email Routing, which **forwards**
+  inbound mail.
 
-`sendMail` already supports a reply-to override. Until MX is live — and as a
-permanent safety net — point replies at a mailbox that exists. On the VPS:
+**Email Routing's blue "Add missing records" button rewrites this record to the
+Cloudflare-only value**, silently dropping Brevo (this happened on 2026-07-26 and
+again by hand while fixing it). After any change in Cloudflare's Email panel,
+re-verify with the authoritative query below and re-merge if needed. Fix 1 (SPF)
+and Fix 2 (MX) below are both **already applied** — they are kept as the recovery
+procedure if a record is ever lost.
+
+## Fix 1 — SPF ✅ applied
+
+| Field | Value |
+| --- | --- |
+| Type | `TXT` |
+| Name | `@` |
+| Content | `v=spf1 include:spf.brevo.com include:_spf.mx.cloudflare.net ~all` |
+
+`spf.brevo.com` resolves to Brevo's sending ranges (verified). `~all` (softfail)
+rather than `-all` until the setup has run clean for a while.
+
+## Fix 2 — inbound mail (MX) ✅ applied
+
+Every reminder tells the client to *"just reply to this email"*. **Cloudflare
+Email Routing** (free) forwards `contact@gateverse.net` to a real mailbox:
+
+1. Cloudflare dashboard → the `gateverse.net` zone → **Email** → **Email Routing**.
+2. **Destination Addresses** → add the Gmail → click the verification link it mails you.
+3. **Routing rules** → custom address `contact@gateverse.net` → send to that Gmail.
+4. **Settings → Add missing records** → adds the three `route*.mx.cloudflare.net`
+   MX records plus a `cf2024-1._domainkey` DKIM TXT (no conflict with Brevo's).
+5. **Immediately re-merge the SPF record** — step 4 overwrites it (see the warning above).
+
+## Fix 3 — reply-to fallback ✅ handled in code (2026-07-26)
+
+[mailer.js](../server/src/utils/mailer.js) now **defaults `Reply-To` to
+`ahmedmahmoudtech@gmail.com`** whenever `EMAIL_REPLY_TO` is unset, so client
+replies land in the team Gmail with no VPS action — the fix ships with the next
+deploy. To point replies elsewhere (e.g. `contact@gateverse.net` once Fix 2's
+MX records are live and forwarding works), override on the VPS:
 
 ```bash
 ssh <vps>
 nano /var/www/photovideo360/server/.env     # add the line below
-#   EMAIL_REPLY_TO=ahmedmahmoudtech@gmail.com
+#   EMAIL_REPLY_TO=contact@gateverse.net
 pm2 restart photovideo360-server
-pm2 logs photovideo360-server --lines 30    # the mailer warning should be gone
 ```
 
 The file is carried across deploys by [remote-deploy-pm2.sh](deploy/remote-deploy-pm2.sh),
-so this survives future releases. Unset, the server logs
-`[mailer] EMAIL_REPLY_TO not set — client replies to reminders may bounce` at boot.
+so an override survives future releases.
 
 ## Fix 4 — tighten DMARC (only after 1–3 are verified)
 
@@ -91,13 +104,19 @@ receiving domain, which you can't add to `gmail.com`.
 
 ## Verifying
 
-Check the records from a machine (PowerShell, bypassing local resolver cache):
+Ask an **authoritative** nameserver, not a resolver: a Cloudflare edit is live on
+`kara`/`kenneth.ns.cloudflare.com` within seconds, so if the old value still comes
+back from there the change did not save — it is never "propagation delay". Public
+resolvers (1.1.1.1, 8.8.8.8) can lag by the record TTL and will mislead you.
 
 ```powershell
-Resolve-DnsName gateverse.net -Type TXT -Server 1.1.1.1 | ForEach-Object { $_.Strings }
-Resolve-DnsName gateverse.net -Type MX  -Server 1.1.1.1
-Resolve-DnsName _dmarc.gateverse.net -Type TXT -Server 1.1.1.1 | ForEach-Object { $_.Strings }
+(Resolve-DnsName gateverse.net -Type TXT -Server kara.ns.cloudflare.com).Strings
+(Resolve-DnsName gateverse.net -Type MX  -Server kara.ns.cloudflare.com) |
+  ForEach-Object { "$($_.Preference) $($_.NameExchange)" }
+(Resolve-DnsName _dmarc.gateverse.net -Type TXT -Server 1.1.1.1).Strings
 ```
+
+Expect exactly ONE `v=spf1` line, and it must contain `include:spf.brevo.com`.
 
 Check the app side — config + SMTP handshake, sends nothing:
 

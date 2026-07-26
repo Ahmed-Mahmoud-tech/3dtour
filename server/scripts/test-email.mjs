@@ -39,10 +39,11 @@ console.log('  host:port  :', `${host}:${port}`, `(secure=${port === 465})`);
 console.log('  SMTP_USER  :', enabled ? 'set' : 'MISSING');
 console.log('  SMTP_PASS  :', process.env.SMTP_PASS ? 'set' : 'MISSING');
 console.log('  From       :', from);
-// gateverse.net has no MX record, so replies to From bounce unless this is set.
+// gateverse.net has no MX record — mailer.js defaults Reply-To to the team
+// Gmail so client replies land somewhere real; EMAIL_REPLY_TO overrides.
 console.log(
   '  Reply-To   :',
-  process.env.EMAIL_REPLY_TO || 'UNSET — client replies will bounce (see ops/email-deliverability.md)'
+  process.env.EMAIL_REPLY_TO || 'ahmedmahmoudtech@gmail.com (code default — override with EMAIL_REPLY_TO)'
 );
 console.log('  mailer     :', mailerEnabled() ? 'ENABLED' : 'DISABLED (reminders will not email)');
 
