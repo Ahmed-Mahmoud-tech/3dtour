@@ -8,6 +8,17 @@ import { pickPanoramaUrl } from "../../utils/textureTier.js";
 
 const SPHERE_RADIUS = 50;
 
+// ─── Zoom (field of view) ────────────────────────────────────────────────────
+// Zoom is expressed as camera FOV: narrow = zoomed in, wide = zoomed out.
+// The tour opens fully zoomed OUT (DEFAULT_FOV === MAX_FOV) so the visitor sees
+// the widest possible view of a scene first and only zooms in deliberately.
+// Keep these at module scope: the Canvas camera prop and the CameraController
+// clamp both read them, and a default outside [MIN_FOV, MAX_FOV] would snap on
+// the first wheel/pinch event.
+const MIN_FOV = 35;
+const MAX_FOV = 90;
+const DEFAULT_FOV = MAX_FOV;
+
 // Fades below are frame-rate independent (step ∝ delta), so one long frame can
 // carry a fade from 0 straight to 1 and the cross-fade is never seen. That is
 // exactly what a warm cache produces: decoding the preloaded panorama stalls
@@ -277,8 +288,6 @@ function PanoramaControls({
   // Pinch-to-zoom state (distance between two touches on the previous event)
   const pinchDist = useRef(0);
 
-  const MIN_FOV = 35;
-  const MAX_FOV = 90;
   const PITCH_LIMIT = THREE.MathUtils.degToRad(85);
 
   useEffect(() => {
@@ -395,7 +404,10 @@ function PanoramaControls({
       prevMouse.current = { x: e.clientX, y: e.clientY };
 
       // Zooming in narrows the FOV — scale sensitivity so panning feels
-      // consistent at any zoom level.
+      // consistent at any zoom level. The 65 is a tuned feel constant, NOT the
+      // default FOV — don't "sync" it to DEFAULT_FOV: what the eye reads as
+      // drag speed is (rate / fov), so rescaling the whole family here makes
+      // every zoom level feel sluggish instead of matching the old default.
       const sensitivity = 0.003 * (camera.fov / 65);
       euler.current.y -= dx * sensitivity;
       euler.current.x -= dy * sensitivity;
@@ -1077,7 +1089,7 @@ export default function SphereViewer({
         // Cap device-pixel-ratio at 2: on high-DPI screens rendering at dpr 3
         // quadruples fragment work for no visible gain on a photo sphere.
         dpr={[1, 2]}
-        camera={{ fov: 65, near: 0.1, far: 200, position: [0, 0, 0.01] }}
+        camera={{ fov: DEFAULT_FOV, near: 0.1, far: 200, position: [0, 0, 0.01] }}
         style={{
           width: "100%",
           height: "100%",
