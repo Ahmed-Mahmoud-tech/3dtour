@@ -48,7 +48,11 @@ export default function NodeEditModal({ node, onClose, onSave, saving }) {
         updateData.panoramaMobileUrl = mobileUrl || "";
       } catch (err) {
         console.error("Failed to upload panorama:", err);
-        alert("Failed to upload new panorama image");
+        alert(
+          err.response?.data?.message ||
+            err.message ||
+            "Failed to upload new panorama image",
+        );
         setUploading(false);
         return;
       }

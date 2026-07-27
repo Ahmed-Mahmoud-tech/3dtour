@@ -59,6 +59,32 @@ function backupFile(filePath, backupDir) {
 }
 
 /**
+ * Do two paths name the same file on disk? Comparing the strings isn't enough:
+ * an upload of `PHOTO.WEBP` is stored as `<id>.WEBP` while its optimized output
+ * is `<id>.webp`, which is ONE file on a case-insensitive filesystem. The
+ * optimizers rewrite a source into its own name, so a wrong answer here means
+ * deleting the output that was just written.
+ */
+function isSameFile(a, b) {
+  try {
+    return fs.realpathSync.native(a) === fs.realpathSync.native(b);
+  } catch {
+    return false; // one of them doesn't exist — not the same file
+  }
+}
+
+/**
+ * Retire an optimizer's source file once its replacement is in place: archived
+ * to options.backupDir when given, deleted otherwise, and left alone when the
+ * output was written over it.
+ */
+function retireSource(inputPath, outputPath, options) {
+  if (isSameFile(inputPath, outputPath)) return;
+  if (options.backupDir) backupFile(inputPath, options.backupDir);
+  else fs.unlinkSync(inputPath);
+}
+
+/**
  * Convert an uploaded panorama to WebP and generate a low-res preview plus,
  * when the source is wide enough to warrant it, a 4096-wide mobile tier.
  * Replaces the original file (deleted, or moved to options.backupDir if
@@ -73,36 +99,43 @@ export async function optimizePanorama(inputPath, options = {}) {
   const previewPath = path.join(dir, `${base}_preview.webp`);
   const mobilePath = path.join(dir, `${base}_mobile.webp`);
 
-  const image = sharp(inputPath, { limitInputPixels: false });
+  // Decode from a buffer, not the path: a WebP upload lands on `${base}.webp`,
+  // so inputPath === fullPath, and the swap below has to rename over the very
+  // file libvips would still hold mapped. On Windows that fails EPERM — an
+  // already-WebP panorama 500'd on upload for exactly that reason.
+  const image = sharp(await fs.promises.readFile(inputPath), { limitInputPixels: false });
   const meta = await image.metadata();
   const targetWidth = Math.min(meta.width || PANORAMA_MAX_WIDTH, PANORAMA_MAX_WIDTH);
   const wantsMobile = targetWidth > PANORAMA_MOBILE_WIDTH;
 
-  await image
-    .clone()
-    .resize({ width: targetWidth, withoutEnlargement: true })
-    .webp({ quality: PANORAMA_QUALITY, ...PANORAMA_WEBP_OPTS })
-    .toFile(fullPath + '.tmp');
-
-  await image
-    .clone()
-    .resize({ width: PREVIEW_WIDTH, withoutEnlargement: true })
-    .webp({ quality: PREVIEW_QUALITY, ...PANORAMA_WEBP_OPTS })
-    .toFile(previewPath);
-
-  if (wantsMobile) {
+  try {
     await image
       .clone()
-      .resize({ width: PANORAMA_MOBILE_WIDTH, withoutEnlargement: true })
-      .webp({ quality: PANORAMA_MOBILE_QUALITY, ...PANORAMA_WEBP_OPTS })
-      .toFile(mobilePath);
-  }
+      .resize({ width: targetWidth, withoutEnlargement: true })
+      .webp({ quality: PANORAMA_QUALITY, ...PANORAMA_WEBP_OPTS })
+      .toFile(fullPath + '.tmp');
 
-  // Atomic-ish swap: only remove the source after all outputs succeeded
-  fs.renameSync(fullPath + '.tmp', fullPath);
-  if (inputPath !== fullPath) {
-    if (options.backupDir) backupFile(inputPath, options.backupDir);
-    else fs.unlinkSync(inputPath);
+    await image
+      .clone()
+      .resize({ width: PREVIEW_WIDTH, withoutEnlargement: true })
+      .webp({ quality: PREVIEW_QUALITY, ...PANORAMA_WEBP_OPTS })
+      .toFile(previewPath);
+
+    if (wantsMobile) {
+      await image
+        .clone()
+        .resize({ width: PANORAMA_MOBILE_WIDTH, withoutEnlargement: true })
+        .webp({ quality: PANORAMA_MOBILE_QUALITY, ...PANORAMA_WEBP_OPTS })
+        .toFile(mobilePath);
+    }
+
+    // Atomic-ish swap: only remove the source after all outputs succeeded
+    fs.renameSync(fullPath + '.tmp', fullPath);
+    retireSource(inputPath, fullPath, options);
+  } catch (err) {
+    // Don't strand a half-written .tmp next to the upload
+    try { fs.unlinkSync(fullPath + '.tmp'); } catch { /* never existed */ }
+    throw err;
   }
 
   return { filePath: fullPath, previewPath, mobilePath: wantsMobile ? mobilePath : null };
@@ -209,15 +242,16 @@ export async function optimizeImage(inputPath, options = {}) {
   const preset = options.preset || 'photo';
 
   try {
-    await sharp(inputPath, { limitInputPixels: false })
+    // Buffer the source for the same reason as optimizePanorama: a .webp
+    // upload makes inputPath === outPath, and the rename below can't replace a
+    // file libvips still holds open. Silently returning the original here meant
+    // a WebP logo kept its full resolution instead of being capped.
+    await sharp(await fs.promises.readFile(inputPath), { limitInputPixels: false })
       .resize({ width: maxWidth, withoutEnlargement: true })
       .webp({ quality: IMAGE_QUALITY, effort: 6, preset })
       .toFile(outPath + '.tmp');
     fs.renameSync(outPath + '.tmp', outPath);
-    if (inputPath !== outPath) {
-      if (options.backupDir) backupFile(inputPath, options.backupDir);
-      else fs.unlinkSync(inputPath);
-    }
+    retireSource(inputPath, outPath, options);
     return outPath;
   } catch (err) {
     console.error('Image optimization failed (keeping original):', err.message);
