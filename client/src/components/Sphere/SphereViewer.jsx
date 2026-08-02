@@ -33,7 +33,7 @@ const MAX_FADE_STEP = 1 / 30;
 // the pano spot, yaw a degree off, exposure shift) reads as a double-exposure
 // "ghost". ~0.125 s is short enough that the eye can't register the doubling,
 // while still soft enough not to read as a hard cut.
-const VIDEO_FADE_OUT_RATE = 8;
+const VIDEO_FADE_OUT_RATE = 3;
 
 // Max seconds an ended clip may hold its last frame waiting for the arrival
 // commit before dissolving anyway (safety valve for a target node that no
@@ -91,7 +91,9 @@ function useProgressiveTexture(fullUrl, previewUrl, onError, retryNonce = 0) {
 
     // Retries must not replay a cached failure/partial response
     const bust = (url) =>
-      retryNonce > 0 ? `${url}${url.includes("?") ? "&" : "?"}r=${retryNonce}` : url;
+      retryNonce > 0
+        ? `${url}${url.includes("?") ? "&" : "?"}r=${retryNonce}`
+        : url;
 
     if (previewUrl) {
       loader.load(bust(previewUrl), (tex) => {
@@ -584,7 +586,10 @@ function VideoSphere({
         // committed (dissolveReady) — dissolving sooner blends over the OLD
         // panorama, which reads as a ghost of the departure room. Capped so a
         // never-committing target can't freeze the frame forever.
-        if (!dissolveReadyRef.current && holdElapsedRef.current < MAX_ARRIVAL_HOLD) {
+        if (
+          !dissolveReadyRef.current &&
+          holdElapsedRef.current < MAX_ARRIVAL_HOLD
+        ) {
           holdElapsedRef.current += delta;
           invalidate();
           return;
@@ -593,7 +598,8 @@ function VideoSphere({
         // frame-rate independent and hitch-capped by MAX_FADE_STEP.
         opacityRef.current = Math.max(
           0,
-          opacityRef.current - Math.min(delta, MAX_FADE_STEP) * VIDEO_FADE_OUT_RATE,
+          opacityRef.current -
+            Math.min(delta, MAX_FADE_STEP) * VIDEO_FADE_OUT_RATE,
         );
         matRef.current.opacity = opacityRef.current;
         if (opacityRef.current > 0) {
@@ -800,7 +806,8 @@ function NadirLogo({ url }) {
         DEFAULT_NADIR_LOGO_URL,
         (t) => apply(t, true),
         undefined,
-        () => console.error("Nadir logo failed to load:", DEFAULT_NADIR_LOGO_URL),
+        () =>
+          console.error("Nadir logo failed to load:", DEFAULT_NADIR_LOGO_URL),
       );
 
     if (url) {
@@ -818,9 +825,12 @@ function NadirLogo({ url }) {
   }, [url]);
 
   // Reset the hover cursor if the patch unmounts while hovered.
-  useEffect(() => () => {
-    if (typeof document !== "undefined") document.body.style.cursor = "";
-  }, []);
+  useEffect(
+    () => () => {
+      if (typeof document !== "undefined") document.body.style.cursor = "";
+    },
+    [],
+  );
 
   if (!texture) return null;
 
@@ -845,7 +855,9 @@ function NadirLogo({ url }) {
       rotation={[-Math.PI / 2, 0, 0]}
       onClick={linksToLanding ? goToLanding : undefined}
       onPointerOver={
-        linksToLanding ? () => (document.body.style.cursor = "pointer") : undefined
+        linksToLanding
+          ? () => (document.body.style.cursor = "pointer")
+          : undefined
       }
       onPointerOut={
         linksToLanding ? () => (document.body.style.cursor = "") : undefined
@@ -1089,7 +1101,12 @@ export default function SphereViewer({
         // Cap device-pixel-ratio at 2: on high-DPI screens rendering at dpr 3
         // quadruples fragment work for no visible gain on a photo sphere.
         dpr={[1, 2]}
-        camera={{ fov: DEFAULT_FOV, near: 0.1, far: 200, position: [0, 0, 0.01] }}
+        camera={{
+          fov: DEFAULT_FOV,
+          near: 0.1,
+          far: 200,
+          position: [0, 0, 0.01],
+        }}
         style={{
           width: "100%",
           height: "100%",
