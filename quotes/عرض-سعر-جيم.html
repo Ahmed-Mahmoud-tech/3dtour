@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>عرض سعر — جولة ٣٦٠° لصالة جيم</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  :root {
+    --brand: #0d9488;
+    --brand-dark: #0f766e;
+    --ink: #0f172a;
+    --muted: #52606d;
+    --line: #d7dde3;
+    --tint: #f0fdfa;
+  }
+  body {
+    direction: rtl; margin: 0; background: #eef1f4;
+    font-family: "Segoe UI", Tahoma, "Traditional Arabic", Arial, sans-serif;
+    font-size: 11pt; line-height: 1.8; color: var(--ink);
+  }
+  .sheet { max-width: 210mm; margin: 24px auto; background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,.12); }
+  .page-wrap { width: 100%; border-collapse: collapse; }
+  .page-wrap > thead > tr > td, .page-wrap > tfoot > tr > td { border: 0; padding: 0; }
+  .pad-t { height: 14mm; }
+  .pfoot {
+    height: 13mm; margin: 0 15mm; padding-top: 3mm; border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; gap: 10mm;
+    font-size: 8pt; color: var(--muted); line-height: 1.4;
+  }
+  .content { border: 0; padding: 0 15mm; vertical-align: top; }
+
+  /* ── الترويسة ── */
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12mm;
+          border-bottom: 2.5px solid var(--brand); padding-bottom: 8px; margin-bottom: 14px; }
+  .brand { font-size: 20pt; font-weight: 800; letter-spacing: 1px; color: var(--ink); line-height: 1.2; }
+  .brand span { color: var(--brand); }
+  .brand small { display: block; font-size: 8.5pt; font-weight: 400; letter-spacing: 0;
+                 color: var(--muted); margin-top: 2px; }
+  .meta { text-align: left; font-size: 9pt; color: var(--muted); line-height: 1.7; white-space: nowrap; }
+  .meta b { color: var(--ink); font-weight: 700; }
+  .doctitle { font-size: 15pt; font-weight: 800; margin: 0 0 2px; }
+  .docsub { font-size: 10pt; color: var(--muted); margin: 0 0 14px; }
+
+  h2 { font-size: 12pt; margin: 20px 0 7px; padding: 0 0 4px 0; color: var(--ink);
+       border-bottom: 1.5px solid var(--line); break-after: avoid; page-break-after: avoid; }
+  h2::before { content: ""; display: inline-block; width: 4px; height: 12px; background: var(--brand);
+               margin-inline-end: 7px; vertical-align: -1px; border-radius: 2px; }
+  h3 { font-size: 10.5pt; margin: 12px 0 4px; color: var(--brand-dark); }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0; padding-inline-start: 20px; }
+  li { margin-bottom: 4px; }
+  strong { font-weight: 700; }
+  .muted { color: var(--muted); font-size: 9.5pt; }
+
+  table.grid { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10pt;
+               break-inside: avoid; page-break-inside: avoid; }
+  table.grid th, table.grid td { border: 1px solid var(--line); padding: 7px 9px; text-align: right; vertical-align: top; }
+  table.grid th { background: #f1f5f7; font-weight: 700; font-size: 9.5pt; }
+  table.grid td.price { font-weight: 800; white-space: nowrap; font-size: 10.5pt; }
+  tr.pick td { background: var(--tint); }
+  tr.pick td.price { color: var(--brand-dark); }
+  .tag { display: inline-block; background: var(--brand); color: #fff; font-size: 7.5pt;
+         font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-inline-start: 5px; vertical-align: 2px; }
+
+  .box { border: 1px solid var(--line); border-inline-start: 4px solid var(--brand);
+         background: #fafcfc; padding: 9px 12px; margin: 10px 0; border-radius: 3px;
+         break-inside: avoid; page-break-inside: avoid; }
+  .box p:first-child { margin-top: 0; }
+  .box p:last-child { margin-bottom: 0; }
+
+  .cols { display: flex; gap: 8mm; }
+  .cols > div { flex: 1; }
+
+  .total { display: flex; justify-content: space-between; align-items: baseline;
+           background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 4px; margin: 12px 0;
+           break-inside: avoid; }
+  .total .lbl { font-size: 10.5pt; }
+  .total .val { font-size: 15pt; font-weight: 800; color: #5eead4; }
+
+  .sign { display: flex; justify-content: space-between; gap: 12mm; margin-top: 22px; padding-top: 10px;
+          border-top: 1px dashed var(--line); font-size: 9.5pt; color: var(--muted); }
+
+  .bar { position: sticky; top: 0; z-index: 2; background: #111; color: #fff; padding: 10px 16px;
+         display: flex; gap: 12px; align-items: center; justify-content: center; font-size: 10pt; }
+  .bar button { font: inherit; padding: 6px 16px; border: 0; border-radius: 4px; background: var(--brand); color: #fff; cursor: pointer; }
+  @media print {
+    body { background: #fff; }
+    .sheet { max-width: none; margin: 0; box-shadow: none; }
+    .bar { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <span>جاهز للطباعة — A4 · لو ظهر تاريخ أو مسار الملف، ألغِ تحديد «الرؤوس والتذييلات» في نافذة الطباعة</span>
+  <button onclick="window.print()">طباعة / حفظ PDF</button>
+</div>
+
+<div class="sheet">
+<table class="page-wrap">
+  <thead><tr><td><div class="pad-t"></div></td></tr></thead>
+  <tfoot><tr><td>
+    <div class="pfoot">
+      <span>Gateverse · جولات ٣٦٠° احترافية</span>
+      <span>واتساب ٠١١١٣٢٣٢٨٨٦ · contact@gateverse.net · gateverse.net</span>
+    </div>
+  </td></tr></tfoot>
+  <tbody><tr><td class="content">
+
+  <div class="head">
+    <div class="brand">GATE<span>VERSE</span>
+      <small>جولات افتراضية ٣٦٠° · الإسكندرية والقاهرة</small>
+    </div>
+    <div class="meta">
+      <div><b>عرض سعر رقم:</b> GV-2026-___</div>
+      <div><b>التاريخ:</b> ٨ / ٨ / ٢٠٢٦</div>
+      <div><b>صلاحية العرض:</b> ١٤ يومًا</div>
+    </div>
+  </div>
+
+  <div class="doctitle">عرض سعر — جولة افتراضية ٣٦٠°</div>
+  <div class="docsub">مُقدَّم إلى: <strong>[اسم الجيم]</strong> — عناية الأستاذ/ <strong>[اسم صاحب الجيم]</strong></div>
+
+  <p>
+    شكرًا على وقتك في المكالمة. العرض ده مبني على اللي اتكلمنا فيه: صالة بمساحة <strong>٤٠٠ متر مربع</strong>،
+    بالإضافة إلى <strong>الفرع الجديد</strong> اللي تحت التجهيز. هدفنا إن أي حد يشوف الجيم من جوه —
+    الأجهزة، النضافة، المساحات، الكلاسات — من موبايله وقبل ما يزور المكان.
+  </p>
+
+  <h2>ليه جولة ٣٦٠° لجيم بالذات</h2>
+  <ul>
+    <li><strong>بترد على أهم سؤال قبل الاشتراك.</strong> «الأجهزة جديدة؟ المكان نضيف؟ زحمة ولا لأ؟ فيه حريمي؟» — الزائر يشوف بنفسه بدل ما يسأل ويستنى رد.</li>
+    <li><strong>بتقلّل زيارات «هعدّي أشوف».</strong> اللي بيتفرج على الجولة وبيجي بعدها بيكون شبه متفق — مكالمات أقل، اشتراكات أعلى.</li>
+    <li><strong>سلاح في الإعلانات الممولة.</strong> رابط واحد يشتغل في إعلان فيسبوك وإنستجرام والواتساب والبايو — شكل مختلف تمامًا عن صور المنافسين.</li>
+    <li><strong>QR على الواجهة والاستقبال.</strong> اللي بيعدّي من الشارع يفتح الجيم على موبايله في ثانية، من غير تطبيق ولا تسجيل.</li>
+    <li><strong>تحليلات حقيقية.</strong> تعرف كام زائر، قعدوا قد إيه، وأكتر منطقة اتفرجوا عليها — تستخدمها في الإعلان وفي تطوير المكان.</li>
+  </ul>
+
+  <h2>نطاق العمل — الفرع الحالي (٤٠٠ م²)</h2>
+  <p class="muted">تغطية مقترحة تشمل: الاستقبال · الكارديو · الأجهزة · الأوزان الحرة · الفنكشنال · استوديو الكلاسات · غرف التغيير واللوكرز · الساونا/الحمامات · الكافيه أو بار المكملات · مكتب الإدارة.</p>
+  <p>مساحة ٤٠٠ م² بتحتاج عمليًا <strong>من ١٤ إلى ١٨ نقطة بانورامية</strong> عشان الحركة تبقى مريحة ومفيش ركن مش مغطى.</p>
+
+  <h2>خيارات الأسعار</h2>
+  <table class="grid">
+    <thead>
+      <tr><th style="width:26%">الخيار</th><th>المتضمَّن</th><th style="width:19%">السعر</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>الأساسية</strong><div class="muted">تغطية مُحكَمة</div></td>
+        <td>
+          حتى <strong>١٥</strong> نقطة بانورامية · حتى <strong>٥</strong> نقاط معلومات ·
+          لوحة تحليلات الزوار · سنة استضافة كاملة · تسليم ٥–١٠ أيام
+        </td>
+        <td class="price">٥٬٩٠٠ ج.م</td>
+      </tr>
+      <tr class="pick">
+        <td><strong>الاحترافية</strong><span class="tag">المرشّحة</span><div class="muted">الأنسب لـ ٤٠٠ م²</div></td>
+        <td>
+          كل اللي فوق، زائد: حتى <strong>٣٠</strong> نقطة بانورامية · حتى <strong>١٥</strong> نقطة معلومات
+          (مواعيد الكلاسات، أسعار الاشتراكات، تعريف بالأجهزة والكوتشيز) ·
+          موسيقى خلفية مخصّصة · <strong>تسليم أولوية ٤–٧ أيام</strong>
+        </td>
+        <td class="price">١٠٬٩٠٠ ج.م</td>
+      </tr>
+      <tr>
+        <td><strong>الفرعين مع بعض</strong><div class="muted">الحالي + الجديد</div></td>
+        <td>
+          باقة احترافية كاملة <strong>لكل فرع</strong> — بخصم <strong>٣٠٪ على الفرع التاني</strong>.
+          سعر الفرع الجديد <strong>محجوز ٦ شهور</strong> من تاريخ العرض، وبيتصوَّر وقت ما تجهّزه.
+        </td>
+        <td class="price">١٨٬٥٠٠ ج.م<div class="muted" style="font-weight:400">بدل ٢١٬٨٠٠ — توفير ٣٬٣٠٠</div></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="box">
+    <p><strong>ترشيحنا:</strong> ابدأ بالفرع الحالي بالباقة الاحترافية. أول ما تشوف نتيجتها على الأرض،
+    الفرع الجديد بيبقى قرار سهل — وسعره محجوز لك بخصم ٣٠٪ لمدة ٦ شهور من غير ما تدفع حاجة عليه دلوقتي.</p>
+  </div>
+
+  <h2>اللي هيتسلّم لك</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>رابط جولة واحد يشتغل على أي موبايل — من غير تطبيق ولا حساب</li>
+        <li>كود <strong>QR</strong> جاهز للطباعة على الواجهة والاستقبال والكارت</li>
+        <li>كود تضمين للموقع وجوجل ماي بيزنس</li>
+      </ul>
+    </div>
+    <div>
+      <ul>
+        <li>لوحة تحليلات بحسابك: الزوار، مدة المشاهدة، أكتر المناطق مشاهدة</li>
+        <li>صندوق رسائل — الزائر يسيب اسمه وتليفونه من جوّه الجولة</li>
+        <li>سنة استضافة كاملة، والجولة باسمك أنت</li>
+      </ul>
+    </div>
+  </div>
+  <p class="muted">من غير اشتراك شهري لمنصة أجنبية — بتدفع تمن التصوير مرة واحدة، والجولة تفضل ملكك.</p>
+
+  <h2>الفرع الجديد — فرصة تستاهل التخطيط من دلوقتي</h2>
+  <p>
+    أحسن توقيت لتصوير الفرع الجديد هو <strong>بعد التشطيب وقبل الافتتاح مباشرة</strong> — والمكان لسه نضيف وفاضي.
+    ساعتها يبقى معاك رابط + QR تنزل بيهم حملة ما قبل الافتتاح: الناس تتفرج على الفرع كامل
+    و<strong>تحجز اشتراكات بخصم افتتاح قبل ما تفتح الباب</strong>. ده بيحوّل فترة التجهيز من تكلفة إلى إيراد.
+  </p>
+
+  <h2>الاستضافة والتجديد</h2>
+  <ul>
+    <li><strong>السنة الأولى مجانًا</strong> بالكامل مع أي باقة — شاملة التحليلات وصندوق الرسائل.</li>
+    <li>بعد السنة الأولى: <strong>١٬٠٠٠ ج.م سنويًا</strong> للجولة الواحدة — وللفرعين معًا <strong>١٬٥٠٠ ج.م سنويًا</strong>.</li>
+    <li>أو تاخد الجولة كاملة على سيرفرك ودومينك الخاص برخصة استضافة ذاتية (من ٥٬٠٠٠ ج.م مرة واحدة) وتنهي التجديد نهائيًا.</li>
+  </ul>
+
+  <h2>إضافات اختيارية</h2>
+  <table class="grid">
+    <tbody>
+      <tr><td>نقطة بانورامية إضافية</td><td class="price" style="width:19%">٢٥٠ ج.م</td></tr>
+      <tr><td>زيارة تحديث أو إعادة تصوير سنوية (مفيدة لما تجدّد الأجهزة أو تفتح دور جديد)</td><td class="price">من ٣٬٥٠٠ ج.م</td></tr>
+      <tr><td>تسليم سريع خلال ٤٨–٧٢ ساعة</td><td class="price">+٣٠٪</td></tr>
+      <tr><td>تسليم ملفات الصور والفيديو الأصلية لاستخدامك في الإعلانات</td><td class="price">+٢٬٩٠٠ ج.م</td></tr>
+      <tr><td>نسخة أوفلاين تشتغل على شاشة داخل الجيم من غير إنترنت</td><td class="price">من ٥٬٩٠٠ ج.م</td></tr>
+    </tbody>
+  </table>
+
+  <h2>خطوات التنفيذ والمدة</h2>
+  <table class="grid">
+    <thead><tr><th style="width:22%">الخطوة</th><th>التفاصيل</th><th style="width:22%">المدة</th></tr></thead>
+    <tbody>
+      <tr><td>زيارة ومعاينة</td><td>نتفق على النقاط وأفضل وقت للتصوير (يفضّل وقت هدوء الجيم)</td><td>يوم واحد</td></tr>
+      <tr><td>التصوير الميداني</td><td>فريقنا في المكان — من غير أي تعطيل لشغل الصالة</td><td>٢–٣ ساعات</td></tr>
+      <tr><td>المعالجة والبناء</td><td>معالجة البانوراما، بناء الانتقالات، نقاط المعلومات، الموسيقى</td><td>٣–٥ أيام</td></tr>
+      <tr><td>المراجعة والتسليم</td><td>جولة مراجعة وتعديلات، ثم تفعيل الرابط والـ QR ولوحة التحليلات</td><td>يوم واحد</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">إجمالي مدة التسليم للباقة الاحترافية: <strong>٤ – ٧ أيام عمل</strong> من تاريخ التصوير.</p>
+
+  <h2>شروط الدفع</h2>
+  <ul>
+    <li><strong>٥٠٪</strong> دفعة مقدّمة عند توقيع العقد وقبل تحديد موعد التصوير.</li>
+    <li><strong>٥٠٪</strong> عند تسليم النسخة النهائية وتفعيل الرابط.</li>
+    <li>الدفع نقدًا أو تحويل بنكي أو محفظة إلكترونية.</li>
+    <li>الأسعار المذكورة نهائية وغير خاضعة لأي إضافات.</li>
+  </ul>
+
+  <div class="total">
+    <span class="lbl">الباقة المرشّحة — الاحترافية للفرع الحالي (٤٠٠ م²)</span>
+    <span class="val">١٠٬٩٠٠ ج.م</span>
+  </div>
+
+  <h2>الخطوة الجاية</h2>
+  <p>
+    رد علينا بالباقة اللي تناسبك ونحدد ميعاد المعاينة في نفس الأسبوع.
+    وأي استفسار، إحنا متاحين على واتساب <strong>٠١١١٣٢٣٢٨٨٦</strong>.
+  </p>
+
+  <div class="sign">
+    <span>Gateverse — الطرف الأول: ..................................</span>
+    <span>موافقة العميل: ..................................</span>
+  </div>
+
+  </td></tr></tbody>
+</table>
+</div>
+</body>
+</html>
