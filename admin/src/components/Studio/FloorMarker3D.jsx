@@ -34,6 +34,10 @@ const ARROW_FLOAT = 0.22;
 const ARROW_BOB = 0.05;
 // Google-blue active/clicked tint (matches the reference asset)
 const ACTIVE_COLOR = "#fff";
+// Extra chevrons behind the main arrow for a stronger motion cue.
+const TRAIL_COUNT = 2;
+const TRAIL_SPACING = 1.7;
+const TRAIL_SCALE_STEP = 0.5;
 
 const HIT_GEO = new THREE.CircleGeometry(1.3, 32);
 const GLOW_GEO = new THREE.PlaneGeometry(2.6, 2.6);
@@ -147,6 +151,7 @@ export default function FloorMarker3D({
   const innerRef = useRef();
   const arrowRef = useRef();
   const arrowMatRef = useRef();
+  const trailMatRefs = useRef([]);
   const glowMatRef = useRef();
   const dashedRef = useRef();
   const hoverT = useRef(0); // eased 0→1 hover factor
@@ -219,6 +224,18 @@ export default function FloorMarker3D({
       arrowMatRef.current.opacity =
         breath * (1 - hoverT.current) + 1 * hoverT.current;
     }
+    // Trailing chevrons pulse with a phase offset to create a subtle
+    // forward-moving rhythm, similar to wayfinding arrows.
+    trailMatRefs.current.forEach((mat, i) => {
+      if (!mat) return;
+      const phase = t * 2.6 - (i + 1) * 0.55;
+      const wave = 0.5 + 0.5 * Math.sin(phase);
+      const idleOpacity = 0.16 + wave * 0.36;
+      const hoverOpacity = 0.28 + wave * 0.28;
+      mat.opacity = hoverT.current
+        ? THREE.MathUtils.lerp(idleOpacity, hoverOpacity, hoverT.current)
+        : idleOpacity;
+    });
     // Soft halo fades in behind the arrow on hover
     if (glowMatRef.current) {
       glowMatRef.current.opacity = 0.85 * hoverT.current;
@@ -286,6 +303,34 @@ export default function FloorMarker3D({
           />
         </mesh>
         {/* The arrow: extruded, floating, leaning slightly toward the viewer */}
+        {Array.from({ length: TRAIL_COUNT }).map((_, i) => {
+          const step = i + 1;
+          const localScale = 1 - step * TRAIL_SCALE_STEP;
+          const trailColor = new THREE.Color(color)
+            .lerp(new THREE.Color(color), 0.62)
+            // .lerp(new THREE.Color("#ffffff"), 0.62)
+            .getStyle();
+          return (
+            <mesh
+              key={`trail-${step}`}
+              geometry={ARROW_GEO}
+              position={[0, -step * TRAIL_SPACING, ARROW_FLOAT - step * 0.015]}
+              rotation-x={0.35}
+              scale={[localScale, localScale, localScale]}
+              renderOrder={5}
+            >
+              <meshMatcapMaterial
+                ref={(el) => {
+                  trailMatRefs.current[i] = el;
+                }}
+                matcap={MATCAP_TEX}
+                color={trailColor}
+                transparent
+                opacity={0.2}
+              />
+            </mesh>
+          );
+        })}
         <mesh
           ref={arrowRef}
           geometry={ARROW_GEO}
