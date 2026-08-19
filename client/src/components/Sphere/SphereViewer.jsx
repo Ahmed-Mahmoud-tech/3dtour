@@ -5,6 +5,7 @@ import * as THREE from "three";
 import NavigationHotspot from "./NavigationHotspot.jsx";
 import InfoSign from "./InfoSign.jsx";
 import { pickPanoramaUrl } from "../../utils/textureTier.js";
+import { cartesianToDeg } from "../../utils/coordUtils.js";
 
 const SPHERE_RADIUS = 50;
 
@@ -155,6 +156,9 @@ function PanoramaSphere({
   customSphere = SPHERE_RADIUS,
   onLoadError,
   retryNonce = 0,
+  onClick,
+  onPointerMove,
+  onPointerOut,
 }) {
   // Preview choice is a MOUNT-time decision: swapping previewUrl on a live
   // sphere would re-run the texture effect (momentarily dropping the already-
@@ -244,6 +248,9 @@ function PanoramaSphere({
     <mesh
       ref={meshRef}
       rotation={[0, rotationY, 0]}
+      onClick={onClick}
+      onPointerMove={onPointerMove}
+      onPointerOut={onPointerOut}
       // Panorama spheres are the background layer and are stacked purely by
       // radius: the widest draws first, the incoming one blends over it.
       // Mount order must NOT decide this — the outgoing sphere reloads its
@@ -893,6 +900,93 @@ function Scene({
   onPanoramaError,
   panoramaRetryNonce,
 }) {
+  const assistHoveringRef = useRef(false);
+
+  // Reset assist cursor if this scene unmounts while hovered.
+  useEffect(
+    () => () => {
+      if (assistHoveringRef.current && typeof document !== "undefined") {
+        document.body.style.cursor = "";
+      }
+    },
+    [],
+  );
+
+  const resolveAssistedHotspot = useCallback(
+    (point) => {
+      if (!hotspotVisible || !point) return null;
+      const hotspots = node.navigationHotspots || [];
+      if (hotspots.length === 0) return null;
+
+      const { x_deg: clickAzimuth } = cartesianToDeg(
+        point.x,
+        point.y,
+        point.z,
+        SPHERE_RADIUS,
+      );
+      const yawOffset = node.initialYawOffset || 0;
+      const sectorSize = Math.min(360 / hotspots.length, 90);
+      const halfSector = sectorSize / 2;
+
+      const angularDistance = (a, b) => {
+        const wrapped = ((a - b + 540) % 360) - 180;
+        return Math.abs(wrapped);
+      };
+
+      let nearest = null;
+      for (const hotspot of hotspots) {
+        const baseAzimuth = hotspot?.position2D?.x_deg;
+        if (typeof baseAzimuth !== "number") continue;
+        const worldAzimuth = (baseAzimuth - yawOffset + 360) % 360;
+        const delta = angularDistance(clickAzimuth, worldAzimuth);
+        if (delta > halfSector) continue;
+        if (!nearest || delta < nearest.delta) nearest = { hotspot, delta };
+      }
+
+      return nearest?.hotspot || null;
+    },
+    [hotspotVisible, node],
+  );
+
+  const updateAssistCursor = useCallback((enabled) => {
+    if (assistHoveringRef.current === enabled) return;
+    assistHoveringRef.current = enabled;
+    document.body.style.cursor = enabled ? "pointer" : "";
+  }, []);
+
+  const handlePanoramaPointerMove = useCallback(
+    (e) => {
+      const hotspot = resolveAssistedHotspot(e?.point);
+      updateAssistCursor(Boolean(hotspot));
+    },
+    [resolveAssistedHotspot, updateAssistCursor],
+  );
+
+  const handlePanoramaPointerOut = useCallback(() => {
+    updateAssistCursor(false);
+  }, [updateAssistCursor]);
+
+  // Click-assist for navigation: clicking near an arrow triggers the same
+  // hotspot navigation. Sector size is split by hotspot count, capped at 90°.
+  const handlePanoramaNavAssist = useCallback(
+    (e) => {
+      // Ignore drag-release clicks from camera panning.
+      if ((e?.delta ?? 0) > 8) return;
+      const hotspot = resolveAssistedHotspot(e?.point);
+      if (!hotspot) return;
+      e.stopPropagation();
+      onNavigate(
+        hotspot.targetNodeId,
+        hotspot.transitionVideoUrl || null,
+        hotspot.transitionId,
+        hotspot.videoInitialYawOffset ?? 0,
+        hotspot.transitionVideos || [],
+        hotspot.id,
+      );
+    },
+    [resolveAssistedHotspot, onNavigate],
+  );
+
   // When this node's imagery is ALREADY on screen as an opaque backdrop
   // (video-transition arrivals and queue waypoints), the active sphere must
   // NOT fade its blurry 1536px preview in over that sharp full-res image —
@@ -958,6 +1052,9 @@ function Scene({
         yawOffset={node.initialYawOffset || 0}
         onLoadError={onPanoramaError}
         retryNonce={panoramaRetryNonce}
+        onClick={handlePanoramaNavAssist}
+        onPointerMove={handlePanoramaPointerMove}
+        onPointerOut={handlePanoramaPointerOut}
       />
       {/* Video sphere - rotated by video's yawOffset */}
       {/* Video sphere - keyed by queueIndex to force re-mount between sequential videos */}
